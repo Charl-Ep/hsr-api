@@ -2,9 +2,11 @@
 #include <hksr/native/Invocation.hpp>
 #include <hksr/native/MetadataReader.hpp>
 #include <hksr/native/ActorEmotion.hpp>
+#include <hksr/native/ActorInputPolicy.hpp>
 #include <hksr/runtime/RuntimeHost.hpp>
 #include <algorithm>
 #include <stdexcept>
+#include <sstream>
 
 namespace hksr::sdk_v1 {
 struct EntityCreationSession::State {
@@ -15,6 +17,8 @@ struct EntityCreationSession::State {
     bool story=false;
     bool constructing=false;
     std::unique_ptr<ActorEmotionBoundary> emotion_boundary;
+    std::unique_ptr<ActorInputPolicy> outfit_boundary;
+    void* story_identifier=nullptr;
     ActorEmotionMethods emotion_methods;
     ReferenceMethods references;
     EntityAccess access;
@@ -54,13 +58,30 @@ struct EntityCreationSession::State {
 };
 EntityCreationSession::EntityCreationSession(const EntityOwner& owner,Method factory,Method story,ManagedObjects* objects,EntityAccessMethods access,ReferenceMethods references,EntityCreationScope::BirthObserver observer)
     :state_(new State(owner,factory,story,objects,std::move(access),references,std::move(observer))) {}
-EntityCreationSession::~EntityCreationSession() { if(state_->emotion_boundary)state_->emotion_boundary->Stop();delete state_; }
+EntityCreationSession::~EntityCreationSession() {
+    if(state_->emotion_boundary)state_->emotion_boundary->Stop();
+    if(state_->outfit_boundary)state_->outfit_boundary->Stop();
+    delete state_;
+}
 void EntityCreationSession::PrepareStoryRuntime(RuntimeMetadata& metadata) {
     auto& s=*state_;s.emotion_methods=ResolveActorEmotionMethods(metadata);
     std::size_t offset=0;
     for(const auto& field:metadata.ReadFields("RPG.GameCore","GameComponentBase",false))
         if(field.name=="_OwnerRef" && field.type=="RPG.GameCore.GameEntity")offset=field.offset;
     if(offset<16)throw std::runtime_error("entity component owner field unavailable");
+    s.outfit_boundary=std::make_unique<ActorInputPolicy>(ActorInputKind::OutfitIdentity,
+        metadata.Resolve("RPG.GameCore","CharacterOutfitComponent","InitComponentForStoryCharacter","System.Void",{"System.String"}),
+        [this,offset](void* component,void* identifier)->std::optional<void*> {
+            auto& state=*state_;
+            if(identifier || !component || !state.story || !state.constructing || !state.story_identifier)return {};
+            GameEntity* entity=nullptr;
+            if(!native::CopyMemoryChecked(&entity,static_cast<unsigned char*>(component)+offset,sizeof(entity)) ||
+                !EntityCreationScope::ContainsOwned(entity,state.owner.Identity()))return {};
+            // The official initializer tests Boy/Girl substrings. For missing
+            // FreeStyle IDs, use this actor's official prefab path as input;
+            // do not fabricate an NPC ID or modify shared configuration.
+            return state.story_identifier;
+        });
     s.emotion_boundary=std::make_unique<ActorEmotionBoundary>(metadata.Resolve("","PEPNFLNCDHG","JHDMCDCFDDP","System.Void",{}),
         [this,offset](void* component) {
             auto& state=*state_;if(!state.story || !component)return false;
@@ -106,6 +127,7 @@ void EntityCreationSession::Create(const StoryCreateInput& input) {
             return result.object;
         };
         auto* graph=text("");auto* model=text(input.model_path);auto* name=text(input.unique_name);auto* config=text(input.adventure_config);
+        s.story_identifier=model;
         CreateEntityResult result;
         result.call=native::Call(s.story_factory,&result.entity,input.manager,4,graph,model,static_cast<void*>(nullptr),name,
             static_cast<void*>(nullptr),config,static_cast<void*>(nullptr),static_cast<void*>(nullptr),false,static_cast<void*>(nullptr));
@@ -118,6 +140,7 @@ void EntityCreationSession::CreateOwned(GameWorld* world,EntityManager* manager,
     if(!world || !manager)throw std::invalid_argument("entity creation needs its world and manager");
     s.status.create_started=true;s.world=world;
     if(s.emotion_boundary)s.emotion_boundary->ActivateOnCurrentThread();
+    if(s.outfit_boundary)s.outfit_boundary->ActivateOnCurrentThread();
     if(!s.Keep(world) || !s.Keep(manager)) {
         s.status.errors.push_back("creation inputs could not all be retained");s.ReleaseRoots();return;
     }
@@ -125,6 +148,10 @@ void EntityCreationSession::CreateOwned(GameWorld* world,EntityManager* manager,
     s.constructing=true;
     try {s.status.factory=create();}
     catch(const std::exception& e){s.status.errors.push_back(e.what());}
+    if(s.status.factory.call.exception) {
+        std::ostringstream message;message<<"official creation threw native exception 0x"<<std::hex<<s.status.factory.call.exception;
+        s.status.errors.push_back(message.str());
+    }
     s.constructing=false;
     s.status.creation = scope.Receipt();
     s.status.create_returned = s.status.factory.call.returned && s.status.factory.entity;

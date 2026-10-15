@@ -20,6 +20,7 @@ public:
     ModelBaselineCapture(EntityToken,GameWorld*,ReferenceMethods,EntityAccess,
         ModelRequestServices,ProfileEventFields,ProfileDescription);
     ~ModelBaselineCapture(); // native destruction only; explicit Close required
+    void SetVisibilityLease(std::unique_ptr<ModelVisibilityLease>);
     ModelBaselineCapture(const ModelBaselineCapture&)=delete;
     ModelBaselineCapture& operator=(const ModelBaselineCapture&)=delete;
     void Service(const WorldFrame&,ManagedObjects&,const ManagedArrays&,AnimationInputTypes);

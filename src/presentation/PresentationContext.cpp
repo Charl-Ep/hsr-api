@@ -10,6 +10,7 @@
 #include <hksr/model/CharacterOutfit.hpp>
 #include <hksr/model/ModelProfileRequest.hpp>
 #include <hksr/model/ModelBaselineCapture.hpp>
+#include <hksr/model/ModelVisibilityLease.hpp>
 #include <hksr/model/ModelTransition.hpp>
 #include <hksr/model/ModelServices.hpp>
 #include <hksr/model/ModelServiceBindings.hpp>
@@ -268,7 +269,9 @@ ControllerBindingServices PresentationContext::Controllers() const {
 PresentationContext::BaselineFactory PresentationContext::Baselines() const {
     return [s=storage_->state,requests=ModelRequests()](EntityToken entity,GameWorld* world,const ProfileDescription& profile) {
         const auto& b=s->bindings;
-        return std::make_unique<ModelBaselineCapture>(entity,world,b.references,EntityAccess(b.entity),requests,b.profile_events,profile);
+        auto capture=std::make_unique<ModelBaselineCapture>(entity,world,b.references,EntityAccess(b.entity),requests,b.profile_events,profile);
+        if(s->metadata)capture->SetVisibilityLease(std::make_unique<ModelVisibilityLease>(*s->metadata,s->objects,b.references,s->resources.Arrays()));
+        return capture;
     };
 }
 PresentationContext::ModelTransitionFactory PresentationContext::ModelTransitions() const {

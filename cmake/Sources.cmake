@@ -76,6 +76,8 @@ set(HKSR_API_SOURCES
     src/entity/NpcCreationSession.cpp
     src/entity/EntityCreationSession.cpp
     src/animation/ActorEmotion.cpp
+    src/model/ActorInputPolicy.cpp
+    src/model/ModelVisibilityLease.cpp
     src/entity/NpcInputConstruction.cpp
 
     # src/managed

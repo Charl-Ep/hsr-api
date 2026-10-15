@@ -1,4 +1,5 @@
 #include <hksr/model/ModelBaselineCapture.hpp>
+#include <hksr/model/ModelVisibilityLease.hpp>
 #include <stdexcept>
 
 namespace hksr::sdk_v1 {
@@ -13,6 +14,7 @@ struct ModelBaselineCapture::State {
     ManagedRoots roots;
     std::vector<ManagedRootId> handles;
     std::unique_ptr<ModelProfileInputs> inputs;
+    std::unique_ptr<ModelVisibilityLease> visibility;
     void* model_type=nullptr;
     bool cancelled=false,busy=false;
     BaselineCaptureStatus status;
@@ -32,6 +34,10 @@ ModelBaselineCapture::ModelBaselineCapture(EntityToken owner,GameWorld* world,Re
     EntityAccess entities,ModelRequestServices services,ProfileEventFields fields,ProfileDescription target)
     :state_(new State(owner,world,refs,std::move(entities),std::move(services),std::move(fields),std::move(target))){}
 ModelBaselineCapture::~ModelBaselineCapture(){delete state_;}
+void ModelBaselineCapture::SetVisibilityLease(std::unique_ptr<ModelVisibilityLease> visibility) {
+    if(state_->status.attempted || state_->visibility)throw std::logic_error("baseline visibility lease already configured");
+    state_->visibility=std::move(visibility);
+}
 const BaselineCaptureStatus& ModelBaselineCapture::Status() const{return state_->status;}
 void ModelBaselineCapture::Cancel(){state_->cancelled=true;}
 void ModelBaselineCapture::Service(const WorldFrame& frame,ManagedObjects& objects,
@@ -92,6 +98,7 @@ std::unique_ptr<ModelProfileRequest> ModelBaselineCapture::TakeRequest() {
     if(s.status.closed || s.Interrupted() || s.status.phase!=BaselineCapturePhase::Ready)
         throw std::logic_error("baseline request is not ready for transfer");
     auto request=std::make_unique<ModelProfileRequest>(s.owner,s.world,std::move(s.inputs),s.references,s.services);
+    if(s.visibility)request->SetVisibilityLease(std::move(s.visibility));
     s.status.phase=BaselineCapturePhase::Transferred;
     return request;
 }
@@ -102,6 +109,7 @@ bool ModelBaselineCapture::Close() {
     // inputs. Leave those roots intact until Service unwinds.
     if(s.busy)return false;
     bool closed=true;
+    if(s.visibility && !s.visibility->Close())closed=false;
     if(s.inputs) {
         if(s.inputs->Close().complete)s.inputs.reset();else closed=false;
     }

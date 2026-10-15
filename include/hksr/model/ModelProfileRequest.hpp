@@ -10,6 +10,7 @@
 #include <memory>
 
 namespace hksr::sdk_v1 {
+class ModelVisibilityLease;
 enum class ModelDestination { Baseline, Alternate };
 enum class ModelRequestPhase { Idle, AwaitingModel, ModelReady, EventsReady, Cancelled, Failed, OwnerEnded };
 struct ModelRequestStatus {
@@ -43,6 +44,7 @@ public:
     ModelProfileRequest(EntityToken owner,GameWorld* world,
         std::unique_ptr<ModelProfileInputs> inputs,ReferenceMethods refs,ModelRequestServices services);
     ~ModelProfileRequest();
+    void SetVisibilityLease(std::unique_ptr<ModelVisibilityLease>);
     ModelProfileRequest(const ModelProfileRequest&) = delete;
     ModelProfileRequest& operator=(const ModelProfileRequest&) = delete;
     void Submit(const WorldFrame& frame,CharacterModelComponent* current_model,ModelDestination destination);

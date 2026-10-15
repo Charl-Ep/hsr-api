@@ -1,4 +1,5 @@
 #include <hksr/model/ModelProfileRequest.hpp>
+#include <hksr/model/ModelVisibilityLease.hpp>
 #include <stdexcept>
 #include <algorithm>
 
@@ -31,6 +32,7 @@ struct ModelProfileRequest::State {
     void* expected_path_=nullptr;
     ModelRequestStatus status_;
     std::unique_ptr<EventValueLease> values_;
+    std::unique_ptr<ModelVisibilityLease> visibility_;
     bool values_ready_=false;
     std::vector<std::unique_ptr<EventValueLease>> retired_values_;
 };
@@ -94,6 +96,8 @@ void ModelProfileRequest::State::Submit(const WorldFrame& frame,CharacterModelCo
     status_.observation={}; status_.completed={}; status_.animator_initialized={};
     try {
         const auto& input=Selected(); void* resolved=nullptr;
+        if(visibility_ && !visibility_->Select(owner_,model,destination==ModelDestination::Alternate))
+            throw std::runtime_error(visibility_->Error());
         status_.resolution=services_.profile.CanChange(model,input.model_path,&resolved);
         if(!status_.resolution.call.returned) throw std::runtime_error("official target path resolution failed");
         auto* expected=input.model_path;
@@ -216,6 +220,7 @@ ModelProfileResult ModelProfileRequest::State::Close(const WorldFrame& frame) {
     if(status_.closed) { out.complete=true; return out; }
     if(!Cancel(frame)) { out.errors.push_back("model request still in use or outside its owner frame"); return out; }
     const bool ended=status_.phase==ModelRequestPhase::OwnerEnded;
+    if(visibility_ && !visibility_->Close())out.errors.push_back("weapon visibility input roots pending release");
     if(values_ && !values_->Close(ended))out.errors.push_back(values_->Error().empty()?"event value roots pending release":values_->Error());
     for(auto& old:retired_values_)if(!old->Close(ended))out.errors.push_back("retired event value roots pending release");
     if(!out.errors.empty())return out;
@@ -229,6 +234,10 @@ ModelProfileRequest::ModelProfileRequest(EntityToken owner,GameWorld* world,std:
     ReferenceMethods refs,ModelRequestServices services)
     :state_(new State(owner,world,std::move(inputs),refs,std::move(services))) {}
 ModelProfileRequest::~ModelProfileRequest() { delete state_; }
+void ModelProfileRequest::SetVisibilityLease(std::unique_ptr<ModelVisibilityLease> visibility) {
+    if(state_->status_.serial || state_->visibility_)throw std::logic_error("model visibility lease already configured");
+    state_->visibility_=std::move(visibility);
+}
 const ModelRequestStatus& ModelProfileRequest::Status() const { return state_->status_; }
 void ModelProfileRequest::Submit(const WorldFrame& frame,CharacterModelComponent* model,ModelDestination destination) {
     state_->Submit(frame,model,destination);
