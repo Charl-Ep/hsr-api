@@ -1,0 +1,13 @@
+# Source-level dependency regression, not a runtime eligibility check.
+get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+file(GLOB_RECURSE HEADERS "${ROOT}/include/*.hpp")
+file(GLOB_RECURSE SOURCES "${ROOT}/src/*.hpp" "${ROOT}/src/*.cpp")
+foreach(FILE IN LISTS HEADERS SOURCES)
+    file(READ "${FILE}" TEXT)
+    if(TEXT MATCHES "#include[ \t]*[<\"]hksr/framework/")
+        message(FATAL_ERROR "SDK must not depend on Framework: ${FILE}")
+    endif()
+    if(NOT FILE MATCHES "/src/serialization/" AND TEXT MATCHES "#include[ \t]*[<\"]nlohmann/|nlohmann::")
+        message(FATAL_ERROR "JSON escaped the serialization boundary: ${FILE}")
+    endif()
+endforeach()

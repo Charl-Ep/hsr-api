@@ -1,0 +1,172 @@
+#include <hksr/presentation/effects/OwnedEffectRequest.hpp>
+#include <mutex>
+#include <stdexcept>
+
+namespace hksr::sdk_v1 {
+namespace {
+// No borrowed MonoEffect pointer survives a callback. The parameter identity
+// is compared only, never dereferenced there. Shared ownership also covers a
+// dispatch already in flight when the native owner disconnects its bridge.
+struct Signals {
+    std::mutex mutex;
+    void* parameters=nullptr;
+    std::uint64_t completions=0,loaded=0,foreign=0;
+    void Receive(api::EffectCompletionEvent event) {
+        std::lock_guard<std::mutex> lock(mutex);
+        if(event.parameters!=parameters){++foreign;return;}
+        ++completions;if(event.effect)++loaded;
+    }
+};
+}
+struct OwnedEffectRequest::State {
+    EffectRequestServices services;
+    api::ManagedRoots roots;
+    std::vector<api::ManagedRootId> handles;
+    std::shared_ptr<Signals> signals=std::make_shared<Signals>();
+    std::unique_ptr<api::EffectCompletion> callback;
+    EffectRequestStatus status;
+    void* manager=nullptr;
+    bool busy=false,fade=true,release_attempted=false,source_observed=false;
+    std::uint64_t removed_at_loaded=0;
+    explicit State(EffectRequestServices value):services(std::move(value)),roots(services.references){}
+    void Trace(const std::string& text) const noexcept {
+        if(services.trace)try{services.trace(text);}catch(...){}
+    }
+    void Keep(void* object) {
+        if(!object)throw std::runtime_error("effect input is null");
+        const auto id=roots.Keep(object);handles.push_back(id);
+        if(!roots.Status(id).ready)throw std::runtime_error("effect input retention failed");
+    }
+    void ReadSignals() {
+        std::lock_guard<std::mutex> lock(signals->mutex);
+        status.completions=signals->completions;
+        status.loaded_completions=signals->loaded;
+        status.foreign_completions=signals->foreign;
+    }
+    void Drain() {
+        if(source_observed) {
+            // Only after official release/reuse, never on Cancel/Submit return.
+            source_observed=false;
+            try {
+                if(services.retire_request)services.retire_request(status.reference);
+            }catch(const std::exception& e){Trace(std::string("effect source retirement: ")+e.what());}
+            // SDK retains any unresolved weak receipt; bookkeeping cleanup
+            // must not block completed official cancellation or client shutdown.
+        }
+        const bool callback_closed=!callback || callback->Close();
+        for(auto it=handles.begin();it!=handles.end();) {
+            if(roots.Release(*it).complete){roots.Forget(*it);it=handles.erase(it);}
+            else ++it;
+        }
+        status.closed=callback_closed && handles.empty();
+    }
+    void ObserveEnd() {
+        auto& s=status;
+        s.observation=services.access.Observe(s.reference);
+        const auto& o=s.observation;
+        // Missing reads are not evidence of a different pool generation.
+        const bool reused=o.id_before.read.returned && o.id_after.read.returned &&
+            o.id_before.value==o.id_after.value && o.id_after.value!=s.reference.id;
+        if(reused || (o.same_generation && o.released.read.returned && o.released.value)) {
+            s.request_ended=true;
+            s.detail=reused?"official parameter pool advanced; no writes to reused input":"official parameters released";
+        }
+    }
+    void ReleaseUnsubmitted() {
+        if(release_attempted)return;
+        release_attempted=true;
+        Trace("release unsubmitted begin id="+std::to_string(status.reference.id));
+        status.release=services.access.ReleaseUnsubmitted(status.reference);
+        Trace("release unsubmitted returned="+std::to_string(status.release.returned)+" exception="+std::to_string(status.release.exception));
+        if(status.release.returned)status.request_ended=true;
+        else status.detail="unsubmitted release unresolved; retained receipt, no repeated decrement";
+    }
+};
+OwnedEffectRequest::OwnedEffectRequest(EffectRequestServices services):state_(new State(std::move(services))){}
+OwnedEffectRequest::~OwnedEffectRequest(){delete state_;}
+const EffectRequestStatus& OwnedEffectRequest::Status() const{return state_->status;}
+void OwnedEffectRequest::Cancel(bool fade) {
+    state_->status.cancelled=true;state_->fade=fade;
+}
+void OwnedEffectRequest::Start(void* entity,void* path) {
+    auto& s=*state_;auto& out=s.status;
+    if(out.started)throw std::logic_error("effect request already started");
+    out.started=true;
+    if(out.cancelled){out.request_ended=true;out.closed=true;return;}
+    s.busy=true;
+    struct Exit{bool& busy;~Exit(){busy=false;}} exit{s.busy};
+    try {
+        s.Keep(entity);s.Keep(path);
+        s.Trace("prepare manager/path begin");
+        const auto service=s.services.manager();
+        if(!service.call.returned || !service.object)throw std::runtime_error("current effect manager unavailable");
+        s.Keep(service.object);s.manager=service.object;
+        const auto mapped=s.services.access.MapPath(entity,path);
+        if(!mapped.call.returned || !mapped.object)throw std::runtime_error("effect path mapping failed");
+        s.Keep(mapped.object);
+        const auto acquired=s.services.access.Acquire(mapped.object);
+        out.reference=acquired.reference; // retain footprint even on partial factory failure
+        s.Trace("acquire returned="+std::to_string(acquired.call.returned)+" id="+std::to_string(out.reference.id));
+        if(!acquired.call.returned || !out.reference.parameters)throw std::runtime_error("effect request acquisition failed");
+        s.Keep(out.reference.parameters);
+        s.signals->parameters=out.reference.parameters;
+        s.callback=std::make_unique<api::EffectCompletion>(s.services.completion,s.services.references,
+            [signals=s.signals](api::EffectCompletionEvent event){signals->Receive(event);});
+        const auto callback=s.callback->Create();
+        if(!callback.call.returned || !callback.object)throw std::runtime_error("effect completion creation failed");
+        const auto configured=s.services.configure(out.reference.parameters,entity,callback.object);
+        s.Trace("configure target="+std::to_string(configured.target.returned)+" callback="+std::to_string(configured.completion.returned));
+        if(!configured.target.returned || !configured.completion.returned)throw std::runtime_error("effect request configuration incomplete");
+        if(out.cancelled){s.ReleaseUnsubmitted();}
+        else {
+            if(s.services.observe_request) {
+                // Reserve retirement responsibility even if the observer
+                // partially records this request and then throws.
+                s.source_observed=true;
+                s.services.observe_request(out.reference,entity);
+            }
+            // Ledger and signal owner exist BEFORE the potentially synchronous
+            // official call. Failure may be a partial handoff, not no-op.
+            out.submitted=true;
+            s.Trace("submit begin id="+std::to_string(out.reference.id));
+            out.submit=s.services.access.Submit(s.manager,out.reference);
+            s.Trace("submit returned="+std::to_string(out.submit.returned)+" exception="+std::to_string(out.submit.exception));
+            out.detail=out.submit.returned?"submitted; visibility not yet established":"submission unresolved; cancel via official manager";
+            if(!out.submit.returned)out.cancelled=true;
+        }
+    }catch(const std::exception& e) {
+        out.detail=e.what();out.cancelled=true;
+        s.Trace("preparation failure: "+out.detail);
+        if(!out.submitted) {
+            if(out.reference.parameters)s.ReleaseUnsubmitted();
+            else out.request_ended=true;
+        }
+    }
+    s.ReadSignals();
+    if(out.request_ended)s.Drain();
+}
+void OwnedEffectRequest::Service() {
+    auto& s=*state_;auto& out=s.status;
+    if(s.busy || !out.started || out.closed)return;
+    s.busy=true;struct Exit{bool& busy;~Exit(){busy=false;}} exit{s.busy};
+    s.ReadSignals();
+    if(!out.request_ended && out.reference.parameters)s.ObserveEnd();
+    if(out.request_ended){s.Drain();return;}
+    if(!out.cancelled || !out.submitted)return;
+    // Retry only on NEW evidence of a late successful load, not every frame or
+    // because Remove returned false. An in-flight completion never adopts the
+    // effect into a later action; the same old manager/reference owns removal.
+    if(out.removal_attempts && out.loaded_completions==s.removed_at_loaded)return;
+    s.removed_at_loaded=out.loaded_completions;
+    ++out.removal_attempts;
+    s.Trace("remove begin id="+std::to_string(out.reference.id)+" attempt="+std::to_string(out.removal_attempts));
+    out.removal=s.services.access.Remove(s.manager,out.reference,s.fade);
+    s.Trace("remove returned="+std::to_string(out.removal.read.returned)+" matched="+std::to_string(out.removal.value)+
+        " exception="+std::to_string(out.removal.read.exception));
+    out.detail=out.removal.read.returned?(out.removal.value?
+        "removal accepted; waiting for official release":"removal unmatched; responsibility remains unresolved"):
+        "removal call failed; responsibility remains unresolved";
+    s.ReadSignals();s.ObserveEnd();
+    if(out.request_ended)s.Drain();
+}
+}

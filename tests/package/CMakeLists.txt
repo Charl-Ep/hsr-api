@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.25)
+project(HksrApiPackageConsumer LANGUAGES CXX)
+find_package(HksrApi 4.6.1 CONFIG REQUIRED COMPONENTS abi1)
+add_executable(consumer main.cpp ../presentation/ContextConsumerCompile.cpp)
+target_link_libraries(consumer PRIVATE Hksr::Api)
+# These switches exercise actual compiler/CRT settings, not mock macros.
+set(HKSR_TEST_CRT "" CACHE STRING "Optional CRT override for negative compile checks")
+set(HKSR_TEST_ITERATOR_LEVEL "" CACHE STRING "Optional STL layout override")
+if(HKSR_TEST_CRT)
+    set_property(TARGET consumer PROPERTY MSVC_RUNTIME_LIBRARY "${HKSR_TEST_CRT}")
+endif()
+if(NOT HKSR_TEST_ITERATOR_LEVEL STREQUAL "")
+    target_compile_definitions(consumer PRIVATE _ITERATOR_DEBUG_LEVEL=${HKSR_TEST_ITERATOR_LEVEL})
+endif()
+add_custom_command(TARGET consumer POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "$<TARGET_FILE:Hksr::Api>" "$<TARGET_FILE_DIR:consumer>")

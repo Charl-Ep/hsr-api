@@ -1,0 +1,311 @@
+#include <hksr/presentation/PresentationContext.hpp>
+#include <hksr/presentation/PresentationBindings.hpp>
+#include <hksr/presentation/PresentationResources.hpp>
+#include <hksr/presentation/PresentationIsolation.hpp>
+#include <hksr/runtime/RuntimeHost.hpp>
+#include <hksr/entity/EntityOwner.hpp>
+#include <hksr/entity/NpcCreationSession.hpp>
+#include <hksr/animation/ActorAnimationSession.hpp>
+#include <hksr/model/CharacterOutfit.hpp>
+#include <hksr/model/ModelProfileRequest.hpp>
+#include <hksr/model/ModelBaselineCapture.hpp>
+#include <hksr/model/ModelTransition.hpp>
+#include <hksr/model/ModelServices.hpp>
+#include <hksr/model/ModelServiceBindings.hpp>
+#include <hksr/animation/ControllerBinding.hpp>
+#include <hksr/presentation/effects/OwnedEffectRequest.hpp>
+#include <hksr/presentation/effects/PresentationEffects.hpp>
+#include <hksr/presentation/events/AnimationExitConfig.hpp>
+#include <hksr/presentation/events/AnimationEventPolicy.hpp>
+#include <hksr/presentation/events/NpcEventSupplement.hpp>
+#include <hksr/presentation/events/NpcEventBindings.hpp>
+#include <hksr/control/ActorControlSession.hpp>
+#include <hksr/control/ActorControlBindings.hpp>
+#include <hksr/control/MouseMode.hpp>
+#include <hksr/animation/OfficialCatalog.hpp>
+#include <stdexcept>
+
+namespace hksr::sdk_v1 {
+struct PresentationContext::State {
+    ManagedObjects& objects;
+    PresentationBindings bindings;
+    PresentationResources resources;
+    std::shared_ptr<const ModelServices> models;
+    WorldMap map;
+    WorldPlacement placement;
+    AnimationControl animation;
+    ProfileInputs profile_inputs;
+    EntityOwner owner;
+    RuntimeMetadata* metadata=nullptr;
+    bool prepared=false;
+    PresentationIsolationStatus isolation_status;
+    Trace trace;
+    std::unique_ptr<PresentationIsolation> isolation;
+    std::unique_ptr<EffectInputs> effect_inputs;
+    std::optional<EffectAccess> effect_access;
+    EffectCompletionAllocation completion;
+    std::vector<std::unique_ptr<AnimationExitConfig>> exit_inputs;
+    ManagedRoots roots;
+    std::vector<ManagedRootId> handles;
+    void* event_type=nullptr;
+    void* model_type=nullptr;
+    void* style_type=nullptr;
+
+    State(ManagedObjects& input,PresentationBindings value)
+        :objects(input),bindings(std::move(value)),resources(bindings),
+         models(std::make_shared<ModelServices>(ModelServiceBindings{bindings.references,bindings.lifetime,
+             bindings.renderer,bindings.entity,ModelAccess(bindings.model),ArtAdmission(bindings.admission)})),
+         map(bindings.world_map),placement(bindings.placement),
+         animation(bindings.animation),profile_inputs(bindings.profile_inputs),
+         roots(bindings.references){}
+    void* ComponentType(void*& cached,const char* name) {
+        if(!cached) {
+            const auto type=objects.ManagedType("RPG.GameCore",name);
+            if(!type.call.returned || !type.object)throw std::runtime_error(std::string(name)+" Type unavailable");
+            handles.push_back(0);
+            handles.back()=roots.Keep(type.object);
+            const auto kept=roots.Target(handles.back());
+            if(!kept.call.returned || !kept.object)throw std::runtime_error(std::string(name)+" Type retention failed");
+            cached=kept.object;
+        }
+        return cached;
+    }
+    void Log(const std::string& text) const noexcept {
+        if(trace)try{trace(text);}catch(...){}
+    }
+    std::unique_ptr<EventRegistrationLease> ExitEvents(EntityToken entity,const std::string& state,
+        const std::vector<EffectRemovalSource>& sources) {
+        for(auto it=exit_inputs.begin();it!=exit_inputs.end();) {
+            if((*it)->Close())it=exit_inputs.erase(it);else ++it;
+        }
+        auto config=std::make_unique<AnimationExitConfig>(*metadata,*metadata,objects,*metadata,bindings.references,bindings.arrays);
+        auto* input=config.get();exit_inputs.push_back(std::move(config));
+        const bool ready=input->Prepare(state,sources);
+        for(const auto& error:input->Errors())Log("action exit input: "+error);
+        if(!ready)return {};
+        if(!event_type) {
+            const auto types=ResolveAnimationInputTypes(objects);
+            if(!types.events.call.returned || !types.events.object)throw std::runtime_error("action exit event Type unavailable");
+            handles.push_back(0);handles.back()=roots.Keep(types.events.object);
+            if(!roots.Status(handles.back()).ready)throw std::runtime_error("action exit event Type retention failed");
+            event_type=types.events.object;
+        }
+        const auto component=models->Entities().Component(entity.entity,event_type);
+        if(!component.call.returned || !component.object)throw std::runtime_error("action exit event component unavailable");
+        auto events=std::make_unique<EventRegistrationLease>(bindings.references,AnimationEvents(bindings.events),ManagedReferenceList(bindings.event_list));
+        events->PrepareInline(input->Groups());
+        if(!events->Status().prepared)return events;
+        events->Attach(entity.entity,component.object,entity);
+        input->Close(); // registration now retains the complete private group
+        return events;
+    }
+};
+struct PresentationContext::Storage {std::shared_ptr<State> state;};
+std::unique_ptr<PresentationContext> PresentationContext::Create(RuntimeMetadata& metadata,RuntimeCapabilities capabilities,
+    PresentationIsolationPolicy policy,Trace trace) {
+    auto context=std::make_unique<PresentationContext>(metadata,ResolvePresentationBindings(metadata));
+    context->Prepare(metadata,capabilities,policy,std::move(trace));return context;
+}
+PresentationContext::PresentationContext(ManagedObjects& objects,PresentationBindings bindings)
+    :storage_(new Storage{std::make_shared<State>(objects,std::move(bindings))}){}
+PresentationContext::~PresentationContext(){delete storage_;}
+const PresentationBindings& PresentationContext::Bindings() const{return storage_->state->bindings;}
+const PresentationResources& PresentationContext::Resources() const{return storage_->state->resources;}
+std::shared_ptr<const ModelServices> PresentationContext::Models() const{return storage_->state->models;}
+std::unique_ptr<ManagedRoots> PresentationContext::CreateRoots() const {
+    return std::make_unique<ManagedRoots>(storage_->state->bindings.references);
+}
+WorldMapSnapshot PresentationContext::ReadMap(const WorldFrame& frame) const {
+    return storage_->state->map.Read(frame);
+}
+PlayerPlacement PresentationContext::ReadPlayerPlacement(const WorldFrame& frame) const {
+    return storage_->state->placement.ReadPlayer(frame);
+}
+const std::vector<std::string>& PresentationContext::BindingErrors() const{return storage_->state->bindings.errors;}
+std::unique_ptr<OfficialCatalog> PresentationContext::CreateCatalog() const {
+    const auto& s=*storage_->state;
+    if(!s.metadata)throw std::logic_error("official catalog requires a prepared runtime context");
+    return std::make_unique<OfficialCatalog>(*s.metadata,*s.metadata,s.objects,s.bindings.references,
+        s.resources.Arrays(),s.resources.Components());
+}
+std::unique_ptr<MouseModeLease> PresentationContext::CreateMouseMode() const {
+    const auto& s=*storage_->state;
+    if(!s.metadata)throw std::logic_error("mouse mode requires a prepared runtime context");
+    const auto methods=ResolveMouseMode(*s.metadata);
+    ObserveMouseModeOwners(methods);
+    return std::make_unique<MouseModeLease>(methods,s.bindings.references);
+}
+namespace {
+bool Alive(EntityToken token) {
+    return token.entity && !TrackedEntities().IsDisposed(token) &&
+        TrackedEntities().Current(token.entity).generation==token.generation;
+}
+}
+std::optional<ActorAnimatorView> PresentationContext::ReadAnimator(EntityToken token) const {
+    auto& s=*storage_->state;
+    if(!Alive(token))return {};
+    const auto type=s.ComponentType(s.model_type,"CharacterModelComponent");
+    if(!Alive(token))return {};
+    const auto component=s.models->Entities().Component(token.entity,type);
+    if(!component.call.returned || !component.object || !Alive(token))return {};
+    const auto model=s.models->Models().Read(static_cast<CharacterModelComponent*>(component.object));
+    if(!Alive(token) || !model.changing.read.returned || model.changing.value ||
+        !model.animator.read.returned || !model.animator.value)return {};
+    const auto initialized=s.profile_inputs.AnimatorInitialized(model.animator.value);
+    if(!initialized.read.returned || !initialized.value || !Alive(token))return {};
+    const auto controller=s.animation.Controller(model.animator.value);
+    if(!controller.call.returned || !controller.object || !Alive(token))return {};
+    return ActorAnimatorView{component.object,model.animator.value,controller.object};
+}
+void* PresentationContext::NpcMotionComponent(EntityToken token,GameWorld* world) const {
+    auto& s=*storage_->state;
+    if(!Alive(token))throw std::runtime_error("selected character is retiring");
+    const auto& entities=s.models->Entities();
+    const auto state=entities.Read(token.entity);
+    if(!Alive(token))throw std::runtime_error("selected character ended during query");
+    if(!state.owner_world.read.returned || state.owner_world.value!=world || !state.loaded.read.returned || !state.loaded.value)
+        throw std::runtime_error("selected character is not loaded in the current world");
+    const auto type=s.ComponentType(s.style_type,"FreeStyleComponent");
+    if(!Alive(token))throw std::runtime_error("selected character ended during query");
+    const auto component=entities.Component(token.entity,type);
+    if(!component.call.returned || !component.object || !Alive(token))throw std::runtime_error("own FreeStyle component unavailable");
+    return component.object;
+}
+const EntityOwner& PresentationContext::Owner() const{return storage_->state->owner;}
+PresentationContext::NpcFactory PresentationContext::Npcs() const {
+    return [s=storage_->state,observer=BirthObserver()] {
+        const auto& b=s->bindings;
+        return std::make_unique<NpcCreationSession>(s->owner,b.factory,b.entity,b.references,observer);
+    };
+}
+PresentationContext::AnimationFactory PresentationContext::Animations() const {
+    return [s=storage_->state](EntityToken owner) {
+        return std::make_unique<ActorAnimationSession>(owner,s->bindings);
+    };
+}
+PresentationContext::NpcInputFactory PresentationContext::NpcInputs() const {
+    if(!storage_->state->metadata)return {};
+    return [s=storage_->state](std::uint32_t id,const char* name,Position3 position,Rotation4 rotation) {
+        return MapNpcInputs::Prepare(*s->metadata,s->bindings.references,id,name,position,rotation);
+    };
+}
+PresentationContext::NpcEventFactory PresentationContext::NpcEvents() const {
+    return [s=storage_->state](NpcCreationSession& npc,GameWorld* world) {
+        const auto& b=s->bindings;
+        const auto& r=s->resources;
+        return std::make_unique<NpcEventSupplement>(npc,world,b.references,
+            NpcEventBindings{EntityAccess(b.entity),b.adventure_data,r.Config(),AnimationEvents(b.events),
+                r.Arrays(),ManagedReferenceList(b.event_list),r.Scene()});
+    };
+}
+void PresentationContext::Prepare(RuntimeMetadata& metadata,RuntimeCapabilities capabilities,
+    PresentationIsolationPolicy policy,Trace trace) {
+    auto& s=*storage_->state;
+    if(s.prepared)throw std::logic_error("presentation context already prepared");
+    s.prepared=true;s.trace=std::move(trace);
+    try {InstallMovementPlacement(s.bindings.actor_control);}
+    catch(const std::exception& e){s.Log(std::string("movement placement unavailable: ")+e.what());}
+    try {
+        if(!capabilities.entity_lifecycle)throw std::runtime_error("entity birth observation unavailable");
+        s.isolation=std::make_unique<PresentationIsolation>(metadata,s.bindings.references,policy,s.trace);
+        s.isolation_status.phase=PresentationIsolationPhase::Prepared;
+        s.Log("presentation isolation prepared; activation precedes owned creation; game qualification pending");
+    }catch(const std::exception& e){s.isolation_status={PresentationIsolationPhase::Unavailable,e.what()};s.Log(std::string("presentation isolation unavailable (original behavior retained): ")+e.what());}
+    // Version qualification stays inside the SDK. Independent creation and
+    // model bindings remain usable when these optional inputs are unavailable.
+    if(metadata.Version()!=RuntimeVersion::Hsr460)return;
+    s.metadata=&metadata;
+    try {
+        const auto methods=ResolveEffectAccess460(metadata);
+        for(const auto& error:methods.binding_errors)s.Log("effect binding: "+error);
+        s.completion=ResolveEffectCompletion460(metadata);
+        s.effect_inputs=std::make_unique<EffectInputs>(metadata,metadata,metadata,s.bindings.references);
+        s.effect_access.emplace(methods);
+    }catch(const std::exception& e){s.Log(std::string("ready effect services unavailable: ")+e.what());}
+}
+EntityCreationScope::BirthObserver PresentationContext::BirthObserver() const {
+    return [s=storage_->state](EntityOrigin origin){if(s->isolation)s->isolation->RememberBirth(origin);};
+}
+std::function<std::unique_ptr<CharacterOutfit>()> PresentationContext::Outfits() const {
+    if(!storage_->state->metadata)return {};
+    return [s=storage_->state]{return std::make_unique<CharacterOutfit>(*s->metadata,*s->metadata,s->objects,s->bindings.references,s->bindings.entity);};
+}
+ModelRequestServices PresentationContext::ModelRequests() const {
+    const auto& b=storage_->state->bindings;
+    std::function<std::unique_ptr<EventValueLease>()> values;
+    if(storage_->state->metadata)values=[s=storage_->state]{return std::make_unique<EventValueInputs>(*s->metadata,*s->metadata,*s->metadata,s->bindings.references);};
+    return {ModelProfile(b.profile),ModelAccess(b.model),ProfileInputs(b.profile_inputs),SceneObjects(b.scene),
+        AnimationEvents(b.events),ModelLoadCompleted,std::move(values)};
+}
+ControllerBindingServices PresentationContext::Controllers() const {
+    const auto& b=storage_->state->bindings;
+    return {AnimationControl(b.animation),EntityAccess(b.entity),SceneObjects(b.scene),ManagedArrays(b.arrays),
+        b.model_loader,b.loader_model,b.loader_manager};
+}
+PresentationContext::BaselineFactory PresentationContext::Baselines() const {
+    return [s=storage_->state,requests=ModelRequests()](EntityToken entity,GameWorld* world,const ProfileDescription& profile) {
+        const auto& b=s->bindings;
+        return std::make_unique<ModelBaselineCapture>(entity,world,b.references,EntityAccess(b.entity),requests,b.profile_events,profile);
+    };
+}
+PresentationContext::ModelTransitionFactory PresentationContext::ModelTransitions() const {
+    return [s=storage_->state,controllers=Controllers()](EntityToken entity,GameWorld* world,std::unique_ptr<ModelProfileRequest> request) {
+        const auto& b=s->bindings;
+        return std::make_unique<ModelTransition>(entity,world,std::move(request),
+            ModelTransitionServices{b.references,EntityAccess(b.entity),ModelAccess(b.model),AnimationControl(b.animation),controllers,b.profile_events});
+    };
+}
+std::optional<EffectRequestServices> PresentationContext::Effects() const {
+    const auto s=storage_->state;
+    if(!s->effect_access)return {};
+    return EffectRequestServices{s->bindings.references,*s->effect_access,s->completion,
+        [s]{return s->effect_inputs->Manager();},
+        [s](void* input,void* target,void* callback){return s->effect_inputs->Configure(input,target,callback);},s->trace,
+        [s](EffectReference ref,void* entity){if(s->isolation)s->isolation->RememberRequest(ref,static_cast<GameEntity*>(entity));},
+        [s](EffectReference ref){if(s->isolation)s->isolation->RetireRequest(ref);},
+        [s](EntityToken entity,const std::string& state,const std::vector<EffectRemovalSource>& sources){return s->ExitEvents(entity,state,sources);}};
+}
+std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices() const {
+    auto services=Effects();
+    return services?std::make_shared<PresentationEffects>(std::move(*services)):nullptr;
+}
+PresentationIsolationStatus PresentationContext::IsolationStatus() const{return storage_->state->isolation_status;}
+PresentationContext::ControlFactory PresentationContext::Controls() const {
+    return [s=storage_->state](EntityToken entity,GameWorld* world) {
+        const auto& b=s->bindings;
+        return std::make_unique<ActorControlSession>(entity,world,
+            ActorControlBindings{b.references,b.lifetime,b.entity,b.actor_control,b.placement,b.arrays});
+    };
+}
+PresentationContext::PlayerResolver PresentationContext::Player() const {
+    return [s=storage_->state](const WorldFrame& frame){return s->placement.PlayerEntity(frame);};
+}
+std::unique_ptr<AnimationEventPolicy> PresentationContext::CreateAnimationPolicy(AnimationTaskPolicy policy) const {
+    const auto s=storage_->state;
+    if(!s->metadata)throw std::logic_error("animation policy requires a prepared runtime context");
+    std::vector<std::string> disabled;
+    std::vector<SelfPerformerRule> performers;
+    if(!policy.allow_camera_noise)disabled.emplace_back("RPG.GameCore.VCameraNoiseChange");
+    if(policy.constrain_head_look_to_owner)performers.push_back({"RPG.GameCore.HeadLookAt","PerformerType"});
+    auto& metadata=*s->metadata;
+    return std::make_unique<AnimationEventPolicy>(metadata,metadata,metadata,metadata,
+        [s](const char* ns,const char* type){return s->metadata->ReadFields(ns,type);},s->bindings.references,
+        [s](GameEntity* entity){return s->owner.Owns(entity);},s->trace,std::move(disabled),std::move(performers));
+}
+void PresentationContext::Activate(){auto& s=*storage_->state;if(s.isolation && s.isolation_status.phase!=PresentationIsolationPhase::Retired){s.isolation->ActivateOnCurrentThread();s.isolation_status.phase=PresentationIsolationPhase::Active;}}
+void PresentationContext::Collect(){if(storage_->state->isolation)storage_->state->isolation->Collect();}
+bool PresentationContext::Close() {
+    auto& s=*storage_->state;
+    bool closed=!s.effect_inputs || s.effect_inputs->Close();
+    for(auto it=s.exit_inputs.begin();it!=s.exit_inputs.end();) {
+        if((*it)->Close())it=s.exit_inputs.erase(it);else {closed=false;++it;}
+    }
+    for(auto it=s.handles.begin();it!=s.handles.end();) {
+        if(s.roots.Release(*it).complete){s.roots.Forget(*it);it=s.handles.erase(it);}else {closed=false;++it;}
+    }
+    s.event_type=nullptr;
+    s.model_type=0;s.style_type=0;
+    if(closed && s.isolation){s.isolation->Retire();s.isolation_status.phase=PresentationIsolationPhase::Retired;}
+    return closed;
+}
+}

@@ -1,0 +1,35 @@
+#pragma once
+// Generated for the installed SDK binary configuration, not the consumer's
+// configuration. CMake force-includes this through Hksr::Api/NativeSupport.
+#include <vector>
+#include <hksr/Interface.hpp>
+
+#if !defined(_WIN64) || !defined(_M_X64) || !defined(_MSC_VER)
+#error HksrApi requires a Windows x64 MSVC-compatible C++ ABI
+#endif
+#if !defined(_DLL)
+#error HksrApi requires the shared CRT (/MD or /MDd), not /MT
+#endif
+#if $<IF:$<CONFIG:Debug>,1,0>
+#if !defined(_DEBUG)
+#error This HksrApi package requires the Debug CRT (/MDd)
+#endif
+#else
+#if defined(_DEBUG)
+#error This HksrApi package requires the Release CRT (/MD)
+#endif
+#endif
+#if _ITERATOR_DEBUG_LEVEL != $<IF:$<CONFIG:Debug>,2,0>
+#error HksrApi and its consumer must use the same STL iterator debug level
+#endif
+
+namespace hksr::sdk_v1::build {
+inline constexpr unsigned interface_generation = @HKSR_API_INTERFACE_GENERATION@;
+static_assert(interface_generation == InterfaceGeneration, "SDK header interface generation mismatch");
+inline constexpr const char* sdk_version = "@PROJECT_VERSION@";
+// Package major/minor follows the target game series; patch is SDK revision.
+inline constexpr unsigned target_game_major = @PROJECT_VERSION_MAJOR@;
+inline constexpr unsigned target_game_minor = @PROJECT_VERSION_MINOR@;
+inline constexpr const char* compiler = "@CMAKE_CXX_COMPILER_ID@ @CMAKE_CXX_COMPILER_VERSION@";
+inline constexpr const char* configuration = "$<CONFIG>";
+}

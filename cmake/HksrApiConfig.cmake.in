@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+set(HksrApi_INTERFACE_GENERATION @HKSR_API_INTERFACE_GENERATION@)
+set(HksrApi_abi@HKSR_API_INTERFACE_GENERATION@_FOUND TRUE)
+set(HksrApi_FOUND TRUE)
+check_required_components(HksrApi)
+if(NOT HksrApi_FOUND)
+    return()
+endif()
+set_and_check(HksrApi_LICENSE_DIR "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/HksrApi/licenses")
+include("${CMAKE_CURRENT_LIST_DIR}/HksrApiTargets.cmake")
