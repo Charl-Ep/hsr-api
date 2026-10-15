@@ -9,6 +9,9 @@ struct SelfPerformerRule {std::string task_type,performer_field;};
 // Construction-time configuration projection; official event scheduling stays
 // intact. Exact disabled configuration types must have independently audited
 // semantics. This is not a complete camera/lighting/Timeline sandbox.
+// Policies coexist behind one process hook. Every policy checks its own thread
+// and ownership predicate; stopping one does not disable other clients.
+// Overlapping ownership composes private projections in registration order.
 class HKSR_API AnimationEventPolicy {
 public:
     using Owns=std::function<bool(GameEntity*)>;

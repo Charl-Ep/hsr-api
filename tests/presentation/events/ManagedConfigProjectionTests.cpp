@@ -182,6 +182,37 @@ void TestManagedConfigProjection() {
     Check(InvokeConstruction(event_array,&foreign,&file)==0 && last_events==event_array && look->enabled);
     look->reference=nullptr;
     Check(InvokeConstruction(event_array,&actor,&file)==0 && !last_events->items[0]->fields.at("EventList")->items[0]->enabled && look->enabled);
+    // A research client must neither block the Framework policy from binding
+    // nor take its routing/stop ownership. Exercise two disjoint owners on the
+    // actual detour, not just an isolated collection helper.
+    int third;
+    AnimationEventPolicy second(provider,provider,provider,provider,[&](auto* ns,auto* name){return provider.Schema(ns,name);},refs,
+        [&](GameEntity* e){return e==reinterpret_cast<GameEntity*>(&foreign);},
+        [&](const auto& line){log.push_back(line);},{"RPG.GameCore.VCameraNoiseChange"});
+    second.ActivateOnCurrentThread();config_tasks->items={camera};
+    Check(InvokeConstruction(event_array,&actor,&file)==0 && last_events!=event_array && camera->enabled && roots.empty());
+    Check(InvokeConstruction(event_array,&foreign,&file)==0 && last_events!=event_array && camera->enabled && roots.empty());
+    Check(InvokeConstruction(event_array,&third,&file)==0 && last_events==event_array);
+    second.Stop();
+    Check(InvokeConstruction(event_array,&foreign,&file)==0 && last_events==event_array);
+    Check(InvokeConstruction(event_array,&actor,&file)==0 && last_events!=event_array && roots.empty());
+    // Intentional overlap is a composition, not a competing singleton. One
+    // disables camera tasks, the other external HeadLookAt performers.
+    look->reference=alias;alias_text->name="AllEnemy";config_tasks->items={camera,look};
+    AnimationEventPolicy overlap(provider,provider,provider,provider,[&](auto* ns,auto* name){return provider.Schema(ns,name);},refs,
+        [&](GameEntity* e){return e==entity;},[&](const auto& line){log.push_back(line);},{"RPG.GameCore.VCameraNoiseChange"});
+    overlap.ActivateOnCurrentThread();
+    Check(InvokeConstruction(event_array,&actor,&file)==0 && last_events!=event_array && roots.empty());
+    Check(!last_events->items[0]->fields.at("EventList")->items[0]->enabled &&
+        !last_events->items[0]->fields.at("EventList")->items[1]->enabled && camera->enabled && look->enabled);
+    overlap.Stop();
+    AnimationEventPolicy remaining(provider,provider,provider,provider,[&](auto* ns,auto* name){return provider.Schema(ns,name);},refs,
+        [&](GameEntity* e){return e==reinterpret_cast<GameEntity*>(&foreign);},
+        [&](const auto& line){log.push_back(line);},{"RPG.GameCore.VCameraNoiseChange"});
+    remaining.ActivateOnCurrentThread();policy.Stop();
+    Check(InvokeConstruction(event_array,&actor,&file)==0 && last_events==event_array);
+    Check(InvokeConstruction(event_array,&foreign,&file)==0 && last_events!=event_array && roots.empty());
+    remaining.Stop();
     policy.Stop();const auto calls_before_stop=caster_calls;
     Check(InvokeConstruction(event_array,&actor,&file)==0 && last_events==event_array && caster_calls==calls_before_stop);
     arena.clear();

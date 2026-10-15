@@ -6,6 +6,7 @@
 #include <hksr/native/MetadataReader.hpp>
 #include <Windows.h>
 #include <atomic>
+#include <algorithm>
 #include <mutex>
 #include <sstream>
 
@@ -16,7 +17,8 @@ struct AnimationEventPolicy::State {
     struct Router {
         detail::NativeHooks hook;
         std::mutex install;
-        std::shared_ptr<State> current;
+        using Clients=std::vector<std::shared_ptr<State>>;
+        std::shared_ptr<const Clients> clients=std::make_shared<const Clients>();
         // Retain failed root-cleanup receipts until process end. Never destroy
         // them and pretend their GC handles were released.
         std::vector<std::shared_ptr<State>> unresolved;
@@ -31,6 +33,7 @@ struct AnimationEventPolicy::State {
     std::atomic<DWORD> thread{0};
     std::vector<std::unique_ptr<detail::ManagedConfigProjection>> pending;
     struct Invocation {
+        Invocation* previous=nullptr;
         std::shared_ptr<State> state;
         std::unique_ptr<detail::ManagedConfigProjection> projection;
         detail::ConfigProjection result;
@@ -89,8 +92,7 @@ struct AnimationEventPolicy::State {
             projection.release();Log("GC cleanup exception; transaction retained until process exit");
         }
     }
-    static Invocation* Begin(Arguments& args) noexcept {
-        const auto state=std::atomic_load(&Route().current);
+    static Invocation* BeginClient(const std::shared_ptr<State>& state,Arguments& args) noexcept {
         if(!state || state->thread.load()!=GetCurrentThreadId() || !args.context)return nullptr;
         auto& s=*state;std::unique_ptr<Invocation> invocation;
         try {
@@ -114,20 +116,32 @@ struct AnimationEventPolicy::State {
         if(invocation)s.Close(invocation->projection);
         return nullptr;
     }
+    static Invocation* Begin(Arguments& args) noexcept {
+        Invocation* last=nullptr;
+        // Immutable subscription snapshot: clients cannot evict one another.
+        // Each policy still qualifies its own thread and exact entity owner.
+        // If a caller intentionally registers overlapping policies, compose
+        // their private projections; never mutate the source configuration.
+        const auto clients=std::atomic_load(&Route().clients);
+        for(const auto& client:*clients)if(auto* next=BeginClient(client,args)) {
+            next->previous=last;last=next;
+        }
+        return last;
+    }
     static void Finish(Invocation* raw,bool abnormal) noexcept {
-        if(!raw)return;
-        std::unique_ptr<Invocation> invocation(raw);auto& s=*invocation->state;
-        try {
-            std::ostringstream line;line<<"entity="<<invocation->entity<<" inspected="<<invocation->result.inspected
-                <<" copied="<<invocation->result.copied<<" disabled="<<invocation->result.disabled
-                <<" source="<<invocation->file
-                <<" original_returned="<<!abnormal<<" elapsed_ms="<<(GetTickCount64()-invocation->started);
-            s.Log(line.str());
-        }catch(...) {}
-        // Official constructors now own references to adopted configs. Even
-        // on an exception, any partially constructed managed objects retain
-        // their own references; temporary input roots can be released.
-        s.Close(invocation->projection);
+        while(raw) {
+            std::unique_ptr<Invocation> invocation(raw);raw=invocation->previous;auto& s=*invocation->state;
+            try {
+                std::ostringstream line;line<<"entity="<<invocation->entity<<" inspected="<<invocation->result.inspected
+                    <<" copied="<<invocation->result.copied<<" disabled="<<invocation->result.disabled
+                    <<" source="<<invocation->file
+                    <<" original_returned="<<!abnormal<<" elapsed_ms="<<(GetTickCount64()-invocation->started);
+                s.Log(line.str());
+            }catch(...) {}
+            // Official constructors now own references to adopted configs.
+            // Partial managed objects retain theirs even after an exception.
+            s.Close(invocation->projection);
+        }
     }
     static void __fastcall Detour(void* receiver,void* events,void* behaviors,void* groups,void* logic,
         void* context,void* registration,void* file,void* metadata) {
@@ -146,7 +160,6 @@ struct AnimationEventPolicy::Holder {std::shared_ptr<State> state;};
 AnimationEventPolicy::AnimationEventPolicy(MethodResolver& m,ObjectMetadata& d,ManagedObjects& o,TypeRelationships& r,Fields f,
     ReferenceMethods refs,Owns owns,Trace trace,std::vector<std::string> disabled,std::vector<SelfPerformerRule> self_performers) {
     auto& router=State::Route();std::lock_guard<std::mutex> lock(router.install);
-    if(std::atomic_load(&router.current))throw std::logic_error("event construction policy already owned");
     auto state=std::make_shared<State>(m,d,o,r,std::move(f),refs,std::move(owns),std::move(trace),std::move(disabled),std::move(self_performers));
     if(!router.hook.Pending()) {
         const auto method=m.Resolve("","HHECHLOIEJO","FGAHFIBMPCP","System.Void",{
@@ -154,8 +167,10 @@ AnimationEventPolicy::AnimationEventPolicy(MethodResolver& m,ObjectMetadata& d,M
             "RPG.GameCore.LogicAnimEventEntry[]","RPG.GameCore.TaskContext","LDMKDJJLOIL","System.String"});
         router.hook.Install({{"animation event configuration construction",method.code,reinterpret_cast<void*>(&State::Detour)}});
     }
+    auto clients=std::make_shared<State::Router::Clients>(*std::atomic_load(&router.clients));
+    clients->push_back(state);
     holder_=new Holder{state};
-    std::atomic_store(&router.current,std::move(state));
+    std::atomic_store(&router.clients,std::shared_ptr<const State::Router::Clients>(std::move(clients)));
 }
 AnimationEventPolicy::~AnimationEventPolicy(){Stop();}
 void AnimationEventPolicy::ActivateOnCurrentThread() {
@@ -170,8 +185,10 @@ void AnimationEventPolicy::Stop() noexcept {
     try {
         auto& state_=holder_->state;
         auto& router=State::Route();std::lock_guard<std::mutex> lock(router.install);
-        if(std::atomic_load(&router.current)==state_)std::atomic_store(&router.current,std::shared_ptr<State>{});
         state_->thread.store(0);
+        auto clients=std::make_shared<State::Router::Clients>(*std::atomic_load(&router.clients));
+        clients->erase(std::remove(clients->begin(),clients->end(),state_),clients->end());
+        std::atomic_store(&router.clients,std::shared_ptr<const State::Router::Clients>(std::move(clients)));
         if(!state_->pending.empty())router.unresolved.push_back(state_);
         delete holder_;holder_=nullptr;
     }catch(...) {
