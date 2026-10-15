@@ -11,6 +11,7 @@ Call `PresentationContext::Create(metadata, capabilities, policy, trace)` from `
 | `Resources()` | Borrowed mesh, material, hierarchy and configuration call services |
 | `Models()` | Shared model/renderer/Art provider with independent resource-owner factories |
 | `Npcs()`, `NpcInputs()`, `NpcEvents()` | Creation, private input and event-supplement factories |
+| `Entities()`, `EntityEvents()` | Map-NPC or independent story-actor creation and event supplements |
 | `Animations()` | Per-entity animation session factory |
 | `Baselines()`, `ModelTransitions()` | Model capture and transition factories |
 | `Controls()`, `Player()` | Control-session factory and current-player resolver |
@@ -41,6 +42,12 @@ Keep `MapNpcInputs` through the creation call, then drain its `Release` independ
 `context.NpcEvents()(npc, world)` creates a supplement that registers requested event files missing from the NPC baseline. `SetEnabled(false)` retires registrations while preserving sources; `RequestClose` also releases sources and is terminal.
 
 Service the supplement before NPC retirement. The NPC session must outlive it. `InputsDetached` means no live registrations remain; `Quiescent` also waits for retired registrations; `Status().closed` includes source cleanup.
+
+## Independent actors
+
+`context.Entities()()` creates a single-use `EntityCreationSession`. Pass `StoryCreateInput` with the current world and manager, a unique name, a model prefab path and its adventure configuration path. The session retains its inputs and owns only entities reported by its creation scope. `Remove` and `Service` use the same disposal lifecycle as map NPCs.
+
+`context.EntityEvents()(session, world)` supplements the loaded model's events. Story actors use the performance-event list as their factory baseline. Keep the supplement alive and service it before retiring the entity.
 
 ## Model capture and transitions
 

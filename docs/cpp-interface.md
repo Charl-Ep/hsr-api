@@ -5,7 +5,7 @@ HksrApi uses a Windows x64 C++ DLL interface. Consumers use C++17+, compatible M
 ## Package contract
 
 ```cmake
-find_package(HksrApi 4.6.1 CONFIG REQUIRED COMPONENTS abi1)
+find_package(HksrApi 4.6.2 CONFIG REQUIRED COMPONENTS abi1)
 target_link_libraries(MyMod PRIVATE Hksr::Api)
 ```
 
@@ -28,7 +28,7 @@ Resource owners and sessions use explicit cleanup on the official thread. Keep o
 
 ## Versioning
 
-SDK versions use `game-major.game-minor.sdk-revision`. The current SDK is 4.6.1 for game 4.6.0.
+SDK versions use `game-major.game-minor.sdk-revision`. The current SDK is 4.6.2 for game 4.6.0.
 
 Interface generation 1 uses namespace `hksr::sdk_v1`, aliased as `hksr::api`. The CMake component is `abi1`. Compatible revisions preserve public value layouts, signatures and ownership. Incompatible changes require a new generation and consumer rebuild.
 

@@ -1,10 +1,13 @@
 #include <hksr/presentation/events/NpcEventSupplement.hpp>
 #include <hksr/presentation/events/NpcEventBindings.hpp>
+#include <hksr/entity/EntityCreationSession.hpp>
+#include <hksr/native/Invocation.hpp>
+#include <hksr/native/MetadataReader.hpp>
 #include <stdexcept>
 
 namespace hksr::sdk_v1 {
 struct NpcEventSupplement::State {
-    State(NpcCreationSession&,GameWorld*,ReferenceMethods,NpcEventBindings);
+    State(std::function<const NpcCreationStatus&()>,GameWorld*,ReferenceMethods,NpcEventBindings,std::size_t=0);
     void Prepare(AnimationInputTypes,ObjectResult);
     void Service(const WorldFrame&);
     bool InputsDetached() const;
@@ -13,7 +16,9 @@ struct NpcEventSupplement::State {
     void* Keep(ObjectResult,bool nullable=false);
     void Drain(bool owner_ended,bool own_frame);
     void RetireActive(bool superseded);
-    NpcCreationSession& npc_;
+    std::function<const NpcCreationStatus&()> creation_;
+    std::size_t story_baseline_offset_=0;
+    EntityCreationSession* entity_=nullptr;
     GameWorld* world_;
     ReferenceMethods refs_;
     NpcEventBindings services_;
@@ -29,7 +34,9 @@ struct NpcEventSupplement::State {
     NpcEventSupplementStatus status_;
 };
 NpcEventSupplement::NpcEventSupplement(NpcCreationSession& npc,GameWorld* world,ReferenceMethods refs,NpcEventBindings services)
-    :state_(new State(npc,world,refs,std::move(services))){}
+    :state_(new State([&npc]()->const auto&{return npc.Status();},world,refs,std::move(services))){}
+NpcEventSupplement::NpcEventSupplement(EntityCreationSession& entity,GameWorld* world,ReferenceMethods refs,NpcEventBindings services,std::size_t story_offset)
+    :state_(new State([&entity]()->const auto&{return entity.Status();},world,refs,std::move(services),story_offset)){state_->entity_=&entity;}
 NpcEventSupplement::~NpcEventSupplement(){delete state_;}
 void NpcEventSupplement::Prepare(AnimationInputTypes types,ObjectResult paths){state_->Prepare(types,paths);}
 void NpcEventSupplement::SetEnabled(bool value){state_->status_.enabled=value;}
@@ -43,8 +50,8 @@ const EventRegistrationLease* NpcEventSupplement::Active() const{return state_->
 namespace {
 void Require(bool value,const char* message) { if(!value) throw std::runtime_error(message); }
 }
-NpcEventSupplement::State::State(api::NpcCreationSession& npc,api::GameWorld* world,api::ReferenceMethods refs,NpcEventBindings services)
-    :npc_(npc),world_(world),refs_(refs),services_(std::move(services)),roots_(refs) {
+NpcEventSupplement::State::State(std::function<const NpcCreationStatus&()> creation,api::GameWorld* world,api::ReferenceMethods refs,NpcEventBindings services,std::size_t story_offset)
+    :creation_(std::move(creation)),story_baseline_offset_(story_offset),world_(world),refs_(refs),services_(std::move(services)),roots_(refs) {
     if(!world_) throw std::invalid_argument("NPC events require their owning world");
 }
 void* NpcEventSupplement::State::Keep(api::ObjectResult value,bool nullable) {
@@ -98,7 +105,7 @@ void NpcEventSupplement::State::Drain(bool owner_ended,bool own_frame) {
 }
 void NpcEventSupplement::State::Service(const api::WorldFrame& frame) {
     if(status_.closed) return;
-    const auto& npc=npc_.Status();
+    const auto& npc=creation_();
     const api::NpcEntityReceipt* owner=nullptr;
     for(const auto& receipt:npc.entities) if(receipt.token.entity==npc.factory.entity) { owner=&receipt; break; }
     bool gone=npc.closed;
@@ -120,7 +127,9 @@ void NpcEventSupplement::State::Service(const api::WorldFrame& frame) {
         Require(status_.event_component.call.returned && status_.event_component.object,"NPC event component unavailable");
         status_.baseline_config=api::ReadAdventureDataConfig(status_.data_component.object,services_.data_field);
         Require(status_.baseline_config.call.returned && status_.baseline_config.object,"NPC baseline configuration unavailable");
-        const auto baseline=services_.config.Read(status_.baseline_config.object).event_paths;
+        auto baseline=services_.config.Read(status_.baseline_config.object).event_paths;
+        if(story_baseline_offset_ && entity_ && entity_->IsStory())baseline.call.returned=native::CopyMemoryChecked(&baseline.object,
+            static_cast<unsigned char*>(status_.baseline_config.object)+story_baseline_offset_,sizeof(void*));
         Require(baseline.call.returned,"NPC baseline event paths unavailable");
         const auto consumer=services_.events.Consumer(status_.event_component.object);
         const auto context=services_.events.Context(status_.event_component.object);

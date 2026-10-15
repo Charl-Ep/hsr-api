@@ -1,4 +1,5 @@
 #include <hksr/entity/NpcCreationSession.hpp>
+#include <hksr/entity/EntityCreationSession.hpp>
 #include <hksr/metadata/MetadataResolver.hpp>
 #include <hksr/presentation/PresentationContext.hpp>
 #include <hksr/presentation/PresentationBindings.hpp>
@@ -50,6 +51,17 @@ GameEntity* __fastcall Create(EntityManager* m, MapNpcDefinition* definition, Np
 }
 GameEntity* __fastcall ReturnExisting(EntityManager*, MapNpcDefinition*, NpcDataRow*, EntityCallback*, bool, void*) {
     return E();
+}
+GameEntity* __fastcall Story(EntityManager* m,int subtype,void* graph,void* model,void* entity_config,void* name,
+    void* story_row,void* adventure,void* appearance,void* material_keys,bool option,void* completion,void* info) {
+    Check(m==manager && subtype==4 && !entity_config && !story_row && !appearance && !material_keys && !option && !completion && info==&metadata);
+    Check(*static_cast<std::string*>(graph)=="" && *static_cast<std::string*>(model)=="Player.prefab" &&
+        *static_cast<std::string*>(name)=="independent" && *static_cast<std::string*>(adventure)=="Player.json");
+    Check(roots.size()==6); // world, manager, four source strings; no NPC input.
+    if(factory_mode==2)return E(1); // A returned pointer alone grants no ownership.
+    auto* result=Empty(world,4,4,&metadata);
+    if(factory_mode==1)RaiseException(0xE0510004,0,0,nullptr);
+    return result;
 }
 std::uint32_t __fastcall Id(GameEntity* e, void* info) { Check(info == &metadata); ++reads; return reinterpret_cast<FakeEntity*>(e)->id; }
 GameWorld* __fastcall Owner(GameEntity*, void*) { return world; }
@@ -226,6 +238,28 @@ void TestNpcCreationSessions() {
         auto npc=create();Check(roots.empty()); // construction has no game side effects
         npc->Create(input);Check(npc->Status().create_returned && sdk_owner.Owns(E()) && !owner.Owns(E()));
         npc->Remove();npc->Service(frame);Check(npc->Status().closed && roots.empty() && !sdk_owner.Owns(E()));
+    }
+    {
+        struct StoryObjects:ManagedObjects {
+            std::vector<std::unique_ptr<std::string>> strings;
+            ObjectResult NewStringUtf8(const char* text)override {
+                strings.push_back(std::make_unique<std::string>(text));return {{true,0},strings.back().get()};
+            }
+            ObjectResult AllocateObject(const char*,const char*)override {throw std::runtime_error("story must not allocate NPC inputs");}
+            ObjectResult ManagedType(const char*,const char*)override {throw std::runtime_error("unexpected story type lookup");}
+        } provider;
+        current_owner=&owner;unrelated_owner=&unrelated;
+        const StoryCreateInput source{world,manager,"independent","Player.prefab","Player.json"};
+        for(unsigned mode=0;mode<3;++mode) {
+            factory_mode=mode;
+            EntityCreationSession actor(owner,{},M(Story),&provider,methods,references);
+            actor.Create(source);Check(actor.IsStory());
+            if(mode==0){Check(actor.Status().create_returned && actor.Status().entities.size()==1);actor.Remove();}
+            else Check(!actor.Status().create_returned);
+            if(mode==2)Check(actor.Status().entities.empty() && !actor.Status().errors.empty());
+            actor.Service(frame);Check(actor.Status().closed && roots.empty());
+        }
+        factory_mode=0;
     }
     RemoveEntityLifecycleHooksAtQuiescentPoint();
     std::cout << "NPC creation/loading/removal/natural-exit/rebuild tests passed through SDK and local lifecycle hooks; no game acceptance.\n";

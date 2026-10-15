@@ -1,6 +1,8 @@
 #include <hksr/presentation/events/NpcEventSupplement.hpp>
 #include <hksr/presentation/PresentationContext.hpp>
 #include <hksr/presentation/PresentationBindings.hpp>
+#include <hksr/presentation/events/NpcEventBindings.hpp>
+#include <hksr/entity/EntityCreationSession.hpp>
 #include <Windows.h>
 #include <algorithm>
 #include <cstddef>
@@ -16,7 +18,7 @@ api::GameWorld* world=reinterpret_cast<api::GameWorld*>(&world_value);
 api::GameEntity* own=reinterpret_cast<api::GameEntity*>(&entity);
 std::wstring shared=L"共有",first=L"表情",second=L"附件";
 Values baseline{&shared},desired{&shared,&first,&second},other_baseline{&shared,&first};
-struct Config { void* padding[3]{}; void* events=&baseline; } config;
+struct Config { void* padding[3]{}; void* events=&baseline;void* performance=&baseline; } config;
 struct Data { void* padding[5]{}; void* config=&::config; } data;
 struct Context { void* caster=own; } context,other_context;
 struct Component { void* unused[3]{}; void* consumer=nullptr; Context* context=&::context; Values records; } component,other_component;
@@ -37,6 +39,9 @@ void __fastcall Free(int id,void*) {
     if(free_fault) { free_fault=false; RaiseException(0xE06D0001,0,0,nullptr); }
 }
 api::GameEntity* __fastcall Create(void*,void*,void*,void* callback,bool,void*) { Check(!callback); return own; }
+api::GameEntity* __fastcall Story(void*,int,void*,void*,void*,void*,void*,void*,void*,void*,bool,void*,void*) {
+    api::EntityCreationScope::FactoryCompleted(world,own);return own;
+}
 std::uint32_t __fastcall Id(void* p,void*) { Check(p==own); ++reads; return 7; }
 api::GameWorld* __fastcall World(void* p,void*) { Check(p==own); ++reads; return world; }
 bool __fastcall Loaded(void* p,void*) { Check(p==own); ++reads; return loaded; }
@@ -167,5 +172,25 @@ void TestNpcEventSupplement() {
         // production receipt correctly remains unresolved and is not retried.
     }
     Reset();
-    std::cout<<"NPC event integration passed: own baseline, source delta, domain pause/resume, replacement, retirement and natural exit; no game acceptance.\n";
+    {
+        struct Strings:Types {
+            std::vector<std::unique_ptr<std::string>> values;
+            api::ObjectResult NewStringUtf8(const char* value)override {values.push_back(std::make_unique<std::string>(value));return Ref(values.back().get());}
+        } strings;
+        api::EntityCreationSession actor(api::EntityOwner{},{},M(Story),&strings,entities,refs);
+        // Construct the supplement before Create, as the real framework does.
+        api::NpcEventSupplement events(actor,world,refs,
+            {api::EntityAccess(entities),data_field,api::AdventureConfig(config_methods),api::AnimationEvents(methods),
+             api::ManagedArrays({{},M(Count),M(Item),{}, {}}),api::ManagedReferenceList({M(Count),M(Item),{}}),
+             api::SceneObjects({{},{},{},M(Equal),{}})},offsetof(Config,performance));
+        actor.Create(api::StoryCreateInput{world,reinterpret_cast<api::EntityManager*>(&manager),"story","model","config"});
+        config.events=&desired; // Ordinary list is desired, NOT the actual factory baseline.
+        config.performance=&baseline;
+        events.Prepare(component_types,Ref(&desired));events.Service(frame);
+        Check(registrations==2 && events.Status().incarnations==1);
+        actor.Remove();events.Service(frame);actor.Service(frame);
+        Check(events.Status().closed && actor.Status().closed && handles.empty());
+    }
+    Reset();
+    std::cout<<"NPC/story event integration passed: distinct factory baselines, source delta, domain pause/resume, replacement, retirement and natural exit; no game acceptance.\n";
 }

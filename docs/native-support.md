@@ -3,7 +3,7 @@
 `HksrApiNative` provides a static library for adapters and in-process diagnostic tools.
 
 ```cmake
-find_package(HksrApiNative 4.6.1 EXACT CONFIG REQUIRED)
+find_package(HksrApiNative 4.6.2 EXACT CONFIG REQUIRED)
 target_link_libraries(MyDiagnostic PRIVATE Hksr::NativeSupport)
 ```
 

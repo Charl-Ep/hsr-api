@@ -1,8 +1,8 @@
 # HksrApi
 
-Windows x64 C++ SDK for Honkai: Star Rail. Version 4.6.1 targets game 4.6.0 and exposes interface generation 1 through `Hksr.Api.dll`.
+Windows x64 C++ SDK for Honkai: Star Rail. Version 4.6.2 targets game 4.6.0 and exposes interface generation 1 through `Hksr.Api.dll`.
 
-The SDK provides runtime subscriptions, official NPC creation, model and controller transitions, animation inputs, effects, placement, gaze and character catalogs.
+The SDK provides runtime subscriptions, NPC and independent character creation, model and controller transitions, animation inputs, effects, placement, gaze and character catalogs.
 
 ## Development
 

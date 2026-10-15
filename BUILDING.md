@@ -24,7 +24,7 @@ CPack produces a Release ZIP named `HksrApi-<version>-win64-msvc<toolset>-Releas
 ## Consume the package
 
 ```cmake
-find_package(HksrApi 4.6.1 CONFIG REQUIRED COMPONENTS abi1)
+find_package(HksrApi 4.6.2 CONFIG REQUIRED COMPONENTS abi1)
 target_link_libraries(MyMod PRIVATE Hksr::Api)
 ```
 

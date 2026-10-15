@@ -5,6 +5,7 @@
 #include <hksr/runtime/RuntimeHost.hpp>
 #include <hksr/entity/EntityOwner.hpp>
 #include <hksr/entity/NpcCreationSession.hpp>
+#include <hksr/entity/EntityCreationSession.hpp>
 #include <hksr/animation/ActorAnimationSession.hpp>
 #include <hksr/model/CharacterOutfit.hpp>
 #include <hksr/model/ModelProfileRequest.hpp>
@@ -181,6 +182,28 @@ PresentationContext::NpcFactory PresentationContext::Npcs() const {
 PresentationContext::AnimationFactory PresentationContext::Animations() const {
     return [s=storage_->state](EntityToken owner) {
         return std::make_unique<ActorAnimationSession>(owner,s->bindings);
+    };
+}
+PresentationContext::EntityFactory PresentationContext::Entities() const {
+    auto s=storage_->state;
+    Method story;
+    if(s->metadata)story=ResolveStoryActorFactory(*s->metadata);
+    return [s,story,observer=BirthObserver()] {
+        auto session=std::make_unique<EntityCreationSession>(s->owner,s->bindings.factory,story,&s->objects,
+            s->bindings.entity,s->bindings.references,observer);
+        if(s->metadata)session->PrepareStoryRuntime(*s->metadata);
+        return session;
+    };
+}
+PresentationContext::EntityEventFactory PresentationContext::EntityEvents() const {
+    auto s=storage_->state;std::size_t story_offset=0;
+    if(s->metadata)for(const auto& f:s->metadata->ReadFields("RPG.GameCore","AdventureCharacterConfig",false))
+        if(f.name=="AnimEventConfigListInPerformance" && f.type=="System.String[]")story_offset=f.offset;
+    return [s,story_offset](EntityCreationSession& entity,GameWorld* world) {
+        const auto& b=s->bindings;const auto& r=s->resources;
+        return std::make_unique<NpcEventSupplement>(entity,world,b.references,
+            NpcEventBindings{EntityAccess(b.entity),b.adventure_data,r.Config(),AnimationEvents(b.events),
+                r.Arrays(),ManagedReferenceList(b.event_list),r.Scene()},story_offset);
     };
 }
 PresentationContext::NpcInputFactory PresentationContext::NpcInputs() const {

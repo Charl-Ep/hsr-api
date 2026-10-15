@@ -3,6 +3,7 @@
 #include "../../entity/NpcCreationSession.hpp"
 
 namespace hksr::sdk_v1 {
+class EntityCreationSession;
 struct NpcEventBindings;
 struct NpcEventSupplementStatus {
     bool prepared=false,enabled=true,closing=false,closed=false;
@@ -18,6 +19,8 @@ struct NpcEventSupplementStatus {
 class HKSR_API NpcEventSupplement {
 public:
     NpcEventSupplement(NpcCreationSession&,GameWorld*,ReferenceMethods,NpcEventBindings);
+    NpcEventSupplement(EntityCreationSession&,GameWorld*,ReferenceMethods,NpcEventBindings,
+        std::size_t story_baseline_offset=0);
     ~NpcEventSupplement(); // native-only; keep servicing until Status().closed
     NpcEventSupplement(const NpcEventSupplement&)=delete;
     NpcEventSupplement& operator=(const NpcEventSupplement&)=delete;

@@ -74,6 +74,8 @@ set(HKSR_API_SOURCES
     src/entity/LifecycleHooks.cpp
     src/entity/MapNpcInputs.cpp
     src/entity/NpcCreationSession.cpp
+    src/entity/EntityCreationSession.cpp
+    src/animation/ActorEmotion.cpp
     src/entity/NpcInputConstruction.cpp
 
     # src/managed

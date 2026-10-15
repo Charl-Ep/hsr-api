@@ -17,6 +17,7 @@ public:
     EntityToken OwnedToken(GameEntity* entity) const;
 private:
     friend class NpcCreationSession;
+    friend class EntityCreationSession;
     const void* Identity() const;
     struct State;
     State* state_;
