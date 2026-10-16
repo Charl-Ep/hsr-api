@@ -1,4 +1,5 @@
 #include <hksr/entity/EntityCreationSession.hpp>
+#include <hksr/runtime/OperationTrace.hpp>
 #include <hksr/native/Invocation.hpp>
 #include <hksr/native/MetadataReader.hpp>
 #include <hksr/native/ActorEmotion.hpp>
@@ -64,6 +65,7 @@ EntityCreationSession::~EntityCreationSession() {
     delete state_;
 }
 void EntityCreationSession::PrepareStoryRuntime(RuntimeMetadata& metadata) {
+    OperationSpan timing("sdk.creation.bindings");
     auto& s=*state_;s.emotion_methods=ResolveActorEmotionMethods(metadata);
     std::size_t offset=0;
     for(const auto& field:metadata.ReadFields("RPG.GameCore","GameComponentBase",false))
@@ -115,6 +117,7 @@ void EntityCreationSession::Create(const NpcCreateInput& input) {
     });
 }
 void EntityCreationSession::Create(const StoryCreateInput& input) {
+    OperationSpan timing("sdk.creation.story");
     auto& s=*state_;
     if(s.status.create_started)throw std::logic_error("entity creation epoch is single-use");
     if(!s.objects || !s.story_factory.code || input.model_path.empty() || input.adventure_config.empty() || input.unique_name.empty())

@@ -1,4 +1,5 @@
 set(HKSR_API_SOURCES
+    src/runtime/OperationTrace.cpp
 
     # adapters/animation
     adapters/animation/AnimatorLayout.cpp

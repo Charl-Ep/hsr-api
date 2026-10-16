@@ -1,4 +1,5 @@
 #include <hksr/control/ActorControlSession.hpp>
+#include <hksr/runtime/OperationTrace.hpp>
 #include <hksr/control/ActorControlBindings.hpp>
 #include <hksr/model/ArtAdmission.hpp>
 #include <hksr/unity/SceneObjects.hpp>
@@ -170,6 +171,7 @@ void ActorControlSession::State::BindGaze(void* mono,void* look,bool direct) {
     look_=retained;mono_=retained_mono;direct_=direct;target_=nullptr;applied_revision_=0;
 }
 void ActorControlSession::State::ResolveGaze(ActorControlServices s) {
+    OperationSpan timing("sdk.controls.gaze");
     auto mono=control_.Mono(controller_);EnsureActive();
     Require(mono.call.returned,"current MonoAvatar query failed");
     if(mono.object) {
@@ -250,6 +252,7 @@ bool ActorControlSession::State::Close(const WorldFrame& frame) {
     bool done=true;for(auto id:handles_)if(!roots_.Release(id).complete)done=false;return done;
 }
 void ActorControlSession::State::Service(const WorldFrame& frame,ActorControlServices s,GameEntity* target,bool ready) {
+    OperationSpan timing("sdk.controls.service");
     if(Ended()) {Cancel();return;}
     if(busy_ || closing_ || Ended() || frame.world!=world_ || !frame.disposing.read.returned || frame.disposing.value)return;
     BusyScope scope(busy_);

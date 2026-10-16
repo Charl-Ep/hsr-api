@@ -1,4 +1,5 @@
 #include <hksr/model/ModelBaselineCapture.hpp>
+#include <hksr/runtime/OperationTrace.hpp>
 #include <hksr/model/ModelVisibilityLease.hpp>
 #include <stdexcept>
 
@@ -42,6 +43,7 @@ const BaselineCaptureStatus& ModelBaselineCapture::Status() const{return state_-
 void ModelBaselineCapture::Cancel(){state_->cancelled=true;}
 void ModelBaselineCapture::Service(const WorldFrame& frame,ManagedObjects& objects,
     const ManagedArrays& arrays,AnimationInputTypes types) {
+    OperationSpan timing("sdk.model.baseline");
     auto& s=*state_;
     if(s.busy || s.status.closed || s.status.phase!=BaselineCapturePhase::Waiting)return;
     s.busy=true;struct Exit{bool& busy;~Exit(){busy=false;}} exit{s.busy};

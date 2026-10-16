@@ -1,4 +1,5 @@
 #include <hksr/presentation/events/NpcEventSupplement.hpp>
+#include <hksr/runtime/OperationTrace.hpp>
 #include <hksr/presentation/events/NpcEventBindings.hpp>
 #include <hksr/entity/EntityCreationSession.hpp>
 #include <hksr/native/Invocation.hpp>
@@ -61,6 +62,7 @@ void* NpcEventSupplement::State::Keep(api::ObjectResult value,bool nullable) {
     Require(roots_.Status(id).ready,"NPC event source root unavailable"); return value.object;
 }
 void NpcEventSupplement::State::Prepare(api::AnimationInputTypes types,api::ObjectResult desired) {
+    OperationSpan timing("sdk.events.prepare");
     if(preparation_attempted_ || status_.closing) throw std::logic_error("NPC event sources are single-use");
     preparation_attempted_=true;
     try {
@@ -83,6 +85,7 @@ bool NpcEventSupplement::State::InputsDetached() const {
     return true;
 }
 void NpcEventSupplement::State::Drain(bool owner_ended,bool own_frame) {
+    OperationSpan timing("sdk.events.drain");
     for(auto it=retired_.begin();it!=retired_.end();) {
         auto& input=**it;
         if(owner_ended) input.OwnerEnded();
@@ -104,6 +107,7 @@ void NpcEventSupplement::State::Drain(bool owner_ended,bool own_frame) {
     }
 }
 void NpcEventSupplement::State::Service(const api::WorldFrame& frame) {
+    OperationSpan timing("sdk.events.service");
     if(status_.closed) return;
     const auto& npc=creation_();
     const api::NpcEntityReceipt* owner=nullptr;

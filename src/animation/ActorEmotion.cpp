@@ -1,4 +1,5 @@
 #include <hksr/native/ActorEmotion.hpp>
+#include <hksr/runtime/OperationTrace.hpp>
 #include <hksr/native/Invocation.hpp>
 #include <Windows.h>
 #include <MinHook.h>
@@ -29,6 +30,7 @@ ActorEmotionMethods ResolveActorEmotionMethods(MethodResolver& m) {
 ActorEmotionSetup::ActorEmotionSetup(ActorEmotionMethods methods,ReferenceMethods references)
     :methods_(methods),assets_(references){}
 void ActorEmotionSetup::Apply(void* emotion,void* data,void* config_type,bool graph_mode) {
+    OperationSpan timing("sdk.emotion.initialize");
     if(status_.attempted)return; // One construction, no automatic native retries.
     status_.attempted=true;status_.requested_graph=graph_mode;
     try {

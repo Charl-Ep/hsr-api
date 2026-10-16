@@ -27,6 +27,14 @@ After successful preparation, cleanup requires official frames. A stop racing wi
 
 The empty host remains available for later clients. Hooks and runtime infrastructure stay loaded. Keep client code and separately retained callback owners alive through completion; hot-unloading is unsupported.
 
+## Scoped operation timing
+
+`OperationTrace` enables synchronous, thread-local collection for one operation; an empty sink disables it. `OperationSpan` records nested stages. SDK invocation wrappers also record native call targets, module names/RVAs, counts and unsuccessful call receipts. Standalone NativeSupport clients remain independent of the DLL and do not emit these records.
+
+The sink receives aggregate rows after collection ends. Each row identifies its parent, inclusive duration, self duration and maximum call duration. Self time subtracts instrumented children; it still includes uninstrumented work and collection overhead. Do not sum nested inclusive times. These are wall-clock measurements, not CPU/GPU samples or asynchronous loading durations. Module description and sink delivery occur after the timed root ends. Native call failures include unavailable bindings as well as exceptions.
+
+Reports retain no game objects. Collection and sink failures do not change operation results. Keep a trace and its spans on one thread with normal nested scope lifetimes.
+
 ## Status and metadata
 
 `ReadRuntimeHostStatus()` reports shared startup, thread attachment and frame counters. Subscription status reports that client's preparation, frame errors and completion.

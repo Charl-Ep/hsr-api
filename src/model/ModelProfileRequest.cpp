@@ -1,4 +1,5 @@
 #include <hksr/model/ModelProfileRequest.hpp>
+#include <hksr/runtime/OperationTrace.hpp>
 #include <hksr/model/ModelVisibilityLease.hpp>
 #include <stdexcept>
 #include <algorithm>
@@ -86,6 +87,7 @@ bool ModelProfileRequest::State::CancelOperation() {
     return true;
 }
 void ModelProfileRequest::State::Submit(const WorldFrame& frame,CharacterModelComponent* model,ModelDestination destination) {
+    OperationSpan timing("sdk.model.submit");
     if(!Current(frame,model) || !CancelOperation()) return;
     if(!Current(frame,model)) return; // cancellation can synchronously end the owner
     // A failed owner retention cannot be bypassed by a later user command.
@@ -136,6 +138,7 @@ void ModelProfileRequest::State::Submit(const WorldFrame& frame,CharacterModelCo
     } catch(const std::exception& e) { Fail(e.what()); }
 }
 void ModelProfileRequest::State::Observe(const WorldFrame& frame,CharacterModelComponent* model,bool require_animator) {
+    OperationSpan timing("sdk.model.observe");
     if(!Current(frame,model) || status_.phase!=ModelRequestPhase::AwaitingModel) return;
     try {
         const auto path=services_.inputs.ModelPath(model);
@@ -161,6 +164,7 @@ void ModelProfileRequest::State::Observe(const WorldFrame& frame,CharacterModelC
 }
 void ModelProfileRequest::State::BindEvents(const WorldFrame& frame,CharacterModelComponent* model,
     void* component,ProfileEventFields fields) {
+    OperationSpan timing("sdk.model.events");
     if(!Current(frame,model) || status_.phase!=ModelRequestPhase::ModelReady || status_.events_attempted) return;
     try {
         const auto path=services_.inputs.ModelPath(model);

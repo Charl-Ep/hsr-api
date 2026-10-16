@@ -1,4 +1,5 @@
 #include <hksr/model/ModelProfileInputs.hpp>
+#include <hksr/runtime/OperationTrace.hpp>
 #include <limits>
 #include <stdexcept>
 
@@ -36,6 +37,7 @@ void* ModelProfileInputs::State::Strings(ManagedObjects& objects,const ManagedAr
 }
 void ModelProfileInputs::State::Prepare(ManagedObjects& objects,const ManagedArrays& arrays,
     const ProfileInputs& access,ProfileEventFields fields,void* model,void* consumer,const ProfileDescription& target) {
+    OperationSpan timing("sdk.model.inputs");
     if(status_.started || status_.closed) throw std::logic_error("model profile inputs are single-use");
     status_.started=true;
     try {

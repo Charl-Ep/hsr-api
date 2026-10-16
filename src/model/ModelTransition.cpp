@@ -1,4 +1,5 @@
 #include <hksr/model/ModelTransition.hpp>
+#include <hksr/runtime/OperationTrace.hpp>
 #include <stdexcept>
 
 namespace hksr::sdk_v1 {
@@ -82,6 +83,7 @@ void ModelTransition::Select(ModelTransitionPlan plan) {
 void ModelTransition::Cancel(){auto& s=*state_;s.closing=true;++s.revision;}
 void ModelTransition::Service(const WorldFrame& frame,ManagedObjects& objects,AnimationInputTypes types,
     const ModelTransitionConsumer& consumer) {
+    OperationSpan timing("sdk.model.transition");
     auto& s=*state_;
     if(s.busy || s.closing || s.status.closed || s.Ended() || !s.OwnFrame(frame))return;
     s.busy=true;struct Exit{bool& busy;~Exit(){busy=false;}} exit{s.busy};

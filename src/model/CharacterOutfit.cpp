@@ -1,4 +1,5 @@
 #include <hksr/model/CharacterOutfit.hpp>
+#include <hksr/runtime/OperationTrace.hpp>
 #include <hksr/managed/ManagedLists.hpp>
 #include <hksr/managed/ManagedArrays.hpp>
 #include <hksr/native/Invocation.hpp>
@@ -101,6 +102,7 @@ CharacterOutfit::CharacterOutfit(MethodResolver& m,ObjectMetadata& d,ManagedObje
 CharacterOutfit::~CharacterOutfit()=default; // no engine calls
 const CharacterOutfitStatus& CharacterOutfit::Status()const{return state_->status;}
 void CharacterOutfit::Prepare(GameEntity* entity,std::uint32_t avatar) {
+    OperationSpan timing("sdk.outfit.prepare");
     auto& s=*state_;auto& status=s.status;
     if(status.started || status.closed)throw std::logic_error("outfit override is single-use");
     status.started=true;status.avatar=avatar;
