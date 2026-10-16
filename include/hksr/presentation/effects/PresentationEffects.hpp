@@ -1,6 +1,7 @@
 #pragma once
 #include "../../Export.hpp"
 #include "EffectControl.hpp"
+#include "EffectInputs.hpp"
 #include <memory>
 #include <string>
 #include <vector>
@@ -18,6 +19,7 @@ class HKSR_API PresentationEffects {
 public:
     explicit PresentationEffects(EffectRequestServices); // explicit low-level provider
     PresentationEffects(EffectRequestServices,EffectControlServices);
+    PresentationEffects(EffectRequestServices,EffectControlServices,ConfigureEntityEffect);
     ~PresentationEffects();
     PresentationEffects(const PresentationEffects&)=delete;
     PresentationEffects& operator=(const PresentationEffects&)=delete;

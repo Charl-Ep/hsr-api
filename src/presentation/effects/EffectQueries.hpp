@@ -6,7 +6,8 @@ namespace hksr::sdk_v1::detail {
 // Query-only adapter. It does not create/update effects or replace their target.
 // Known caller scopes use an independent list on a temporary manager receiver;
 // the original FindEffectByUniqueName still performs all matching/selection.
-// No scope is UNKNOWN, not public. Framework has not enabled this candidate.
+// No scope is UNKNOWN, not public. PresentationIsolation installs this adapter.
+// ForceLoadEffectByUniqueName is a separate mutating path, not covered here.
 class HKSR_API EffectQueries {
 public:
     // Read-only source resolution, including retired entity provenance and any

@@ -2,6 +2,7 @@
 #include <hksr/presentation/effects/PresentationEffects.hpp>
 #include <Windows.h>
 #include <array>
+#include <algorithm>
 #include <cstring>
 #include <iostream>
 #include <map>
@@ -9,7 +10,7 @@
 
 namespace {
 using namespace hksr::api;
-int info,entity,path,mapped,manager,other_manager,effect,official_callback,official_completions=0;
+int info,entity,recipient,path,mapped,manager,other_manager,effect,official_callback,official_completions=0;
 void* fail_keep=nullptr;
 int id_reads=0;
 struct Params {unsigned id=0;bool released=false;int state=0;void* callback=nullptr;void* target=nullptr;};
@@ -20,6 +21,7 @@ EffectCompletionLayout layout{24,40,64};
 int submits=0,removes=0,releases=0;
 bool sync=false,submit_fault=false,configure_fault=false,remove_match=true,release_on_remove=false,id_fault=false;
 void* current_manager=&manager;void* last_removed_manager=nullptr;
+void* expected_target=&entity;
 void Check(bool value){if(!value)throw std::runtime_error("owned effect request test failed");}
 template<class T>Method M(T entry){return {reinterpret_cast<void*>(entry),&info};}
 int __fastcall Keep(void* object,int,int,void*){if(object==fail_keep)return 0;roots[++root_id]=object;return root_id;}
@@ -39,7 +41,7 @@ bool __fastcall Released(Params* value,void*){return value->released;}
 int __fastcall State(Params* value,void*){return value->state;}
 void* __fastcall Instance(Params* value,void*){return value->state==3?&effect:nullptr;}
 void __fastcall Submit(void* service,Params* value,void*) {
-    Check(service==current_manager && value->target==&entity && value->callback);++submits;value->state=1;
+    Check(service==current_manager && value->target==expected_target && value->callback);++submits;value->state=1;
     if(sync){Invoke(*value,&effect);Check(removes==0);value->state=3;}
     if(submit_fault)RaiseException(0xE0680001,0,0,nullptr);
 }
@@ -63,10 +65,31 @@ EffectRequestServices Services() {
 void Reset() {
     Check(roots.empty());delegates.clear();first={};second={19};acquiring=&first;
     submits=removes=releases=0;sync=submit_fault=configure_fault=release_on_remove=id_fault=false;
-    remove_match=true;current_manager=&manager;last_removed_manager=nullptr;fail_keep=nullptr;official_completions=id_reads=0;
+    remove_match=true;current_manager=&manager;last_removed_manager=nullptr;fail_keep=nullptr;official_completions=id_reads=0;expected_target=&entity;
 }
 }
 void TestOwnedEffectRequest() {
+    Reset();
+    {
+        bool attributed=false;EntityEffectOptions options;options.unique_name="different-target";
+        auto services=Services();services.observe_request=[&](EffectReference,void* owner){Check(owner==&entity);attributed=true;};
+        services.manager=[&]{options.unique_name="newer-intent";return ObjectResult{{true,0},current_manager};};
+        PresentationEffects factory(services,{},[](void* raw,void* caster,void* target,void* callback,const EntityEffectOptions& options) {
+            Check(caster==&entity && target==&recipient && options.unique_name=="different-target");
+            Check(std::any_of(roots.begin(),roots.end(),[](const auto& item){return item.second==&recipient;}));
+            auto* params=static_cast<Params*>(raw);params->target=target;params->callback=callback;
+            return EffectInputResult{{true,0},{true,0}};
+        });
+        auto request=factory.CreateRequest();expected_target=&recipient;
+        request->StartEntity(&entity,&recipient,&path,options);
+        Check(request->Status().submitted && attributed && first.target==&recipient && submits==1 && options.unique_name=="newer-intent");
+        request->Cancel();release_on_remove=true;request->Service();Check(request->Status().closed && roots.empty());
+    }
+    Reset();
+    {
+        OwnedEffectRequest request(Services());request.StartEntity(&entity,&recipient,&path,{});
+        Check(request.Status().closed && !request.Status().submitted && submits==0 && releases==0 && roots.empty());
+    }
     Reset();
     {
         std::vector<std::string> traces;

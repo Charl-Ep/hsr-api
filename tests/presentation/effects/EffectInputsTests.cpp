@@ -4,13 +4,19 @@
 #include <memory>
 #include <string>
 #include <stdexcept>
+#include <cstddef>
+#include <limits>
 
 namespace {
 using namespace hksr::api;
 int info,global_type,params_type,manager,other_manager,entity,callback;
-int global_field,target_field,callback_field,serial=0,lookups=0;
+int global_field,target_field,callback_field,caster_field,name_field,other_target,serial=0,lookups=0;
 void* service=&manager;
-struct Parameters {void* target=nullptr;void* completion=nullptr;} parameters;
+struct NullableVector {Position3 value{};std::uint8_t present=0,padding[3]{};};
+struct Parameters {
+    void* target=nullptr;void* completion=nullptr;void* caster=nullptr;void* name=nullptr;
+    NullableVector offset,rotation,scale;std::uint8_t fade=0,simulate=0;std::int32_t usage=0;bool attached=false;float pitch=0;
+} parameters;
 std::map<int,void*> roots;std::vector<std::unique_ptr<std::string>> texts;
 bool fail_callback=false;
 void Check(bool value){if(!value)throw std::runtime_error("effect inputs test failed");}
@@ -23,20 +29,26 @@ void* __fastcall Find(void* type,void* name,int flags,void* meta) {
     if(type==&global_type){Check(flags==56 && key=="s_MonoEffectManager");return &global_field;}
     Check(type==&params_type && flags==52);
     if(key=="TargetEntity")return &target_field;
+    if(key=="CasterEntity")return &caster_field;
+    if(key=="UniqueEffectName")return &name_field;
     Check(key=="CompleteCallback");return &callback_field;
 }
 void* __fastcall Get(void* field,void* object,void* meta){Check(field==&global_field && !object && meta==&info);return service;}
 void __fastcall Set(void* field,void* object,void* value,int flags,void* binder,void* culture,void* meta) {
     Check(object==&parameters && !flags && !binder && !culture && meta==&info);
-    if(field==&target_field){Check(value==&entity);parameters.target=value;}
+    if(field==&target_field){Check(value==&entity || value==&other_target);parameters.target=value;}
+    else if(field==&caster_field){Check(value==&entity);parameters.caster=value;}
+    else if(field==&name_field){parameters.name=value;}
     else {Check(field==&callback_field && value==&callback);parameters.completion=value;
         if(fail_callback)RaiseException(0xE0670001,0,0,nullptr);}
 }
+void __fastcall Attach(void* object,bool enabled,void*) {Check(object==&parameters);parameters.attached=enabled && parameters.target;}
 struct Inputs:MethodResolver,ObjectMetadata,ManagedObjects {
     Method Resolve(const char* ns,const char* type,const char* name,const char* result,
         std::initializer_list<const char*> args,MethodKind kind)override {
         MetadataResolver resolver({{"System","RuntimeType",{{"GetField","System.Reflection.FieldInfo",
-            {"System.String","System.Reflection.BindingFlags"},false,M(Find)}}}});
+            {"System.String","System.Reflection.BindingFlags"},false,M(Find)}}},
+            {"RPG.Client","TriggerEffectParams",{{"set_IsAttachToTargetEntity","System.Void",{"System.Boolean"},false,M(Attach)}}}});
         return resolver.Resolve(ns,type,name,result,args,kind);
     }
     DeclaredType ReadObjectType(void*)override {
@@ -44,7 +56,18 @@ struct Inputs:MethodResolver,ObjectMetadata,ManagedObjects {
             {"GetValue","System.Object",{"System.Object"},false,M(Get)},
             {"SetValue","System.Void",{"System.Object","System.Object","System.Reflection.BindingFlags","System.Reflection.Binder","System.Globalization.CultureInfo"},false,M(Set)}}};
     }
-    std::vector<DeclaredField> ReadObjectFields(void*)override{throw std::runtime_error("unused fields");}
+    RuntimeTypeName ReadObjectTypeName(void* object)override {Check(object==&parameters);return {"RPG.Client","TriggerEffectParams"};}
+    std::vector<DeclaredField> ReadObjectFields(void* object)override {
+        Check(object==&parameters);
+        auto field=[](const char* name,const char* type,std::size_t offset){return DeclaredField{"RPG.Client","TriggerEffectParams",name,type,offset,6,true};};
+        return {field("PositionOffset","System.Nullable<UnityEngine.Vector3>",offsetof(Parameters,offset)),
+            field("RotationOffset","System.Nullable<UnityEngine.Vector3>",offsetof(Parameters,rotation)),
+            field("CustomScale","System.Nullable<UnityEngine.Vector3>",offsetof(Parameters,scale)),
+            field("IsNeedFadeIn","System.Boolean",offsetof(Parameters,fade)),
+            field("ForceSimulateImmediately","System.Boolean",offsetof(Parameters,simulate)),
+            field("ParamEntityUsage","RPG.GameCore.EffectParamEntityUsage",offsetof(Parameters,usage)),
+            field("TowardMaxPitchAngle","System.Single",offsetof(Parameters,pitch))};
+    }
     ObjectResult NewStringUtf8(const char* value)override{texts.push_back(std::make_unique<std::string>(value));return {{true,0},texts.back().get()};}
     ObjectResult ManagedType(const char* ns,const char* name)override {
         Check(std::string(ns)=="RPG.Client");
@@ -64,5 +87,21 @@ void TestEffectInputs() {
     const auto partial=inputs.Configure(&parameters,&entity,&callback);fail_callback=false;
     Check(partial.target.returned && !partial.completion.returned && partial.completion.exception==0xE0670001 && lookups==3);
     Check(!inputs.Configure(&parameters,nullptr,&callback).target.returned);
+    EntityEffectOptions options;options.unique_name="scene";options.position_offset={1,2,3};options.rotation_offset={0,90,0};
+    options.fade_in=options.simulate_immediately=options.attach_to_target=true;options.scale=Position3{2,3,4};
+    const auto full=inputs.ConfigureEntity(&parameters,&entity,&other_target,&callback,options);
+    Check(full.target.returned && full.completion.returned && parameters.caster==&entity && parameters.target==&other_target);
+    Check(*static_cast<std::string*>(parameters.name)=="scene" && parameters.offset.present && parameters.offset.value.z==3);
+    Check(parameters.rotation.present && parameters.rotation.value.y==90 && parameters.scale.present && parameters.scale.value.x==2);
+    Check(parameters.fade==1 && parameters.simulate==1 && parameters.usage==1 && parameters.attached && parameters.pitch==90);
+    const auto persistent_roots=roots.size();options.scale.reset();options.attach_to_target=false;
+    Check(inputs.ConfigureEntity(&parameters,&entity,&other_target,&callback,options).completion.returned);
+    Check(!parameters.scale.present && !parameters.attached && roots.size()==persistent_roots);
+    fail_callback=true;const auto failed=inputs.ConfigureEntity(&parameters,&entity,&other_target,&callback,options);fail_callback=false;
+    Check(failed.target.returned && !failed.completion.returned && roots.size()==persistent_roots);
+    Check(!inputs.ConfigureEntity(&parameters,&entity,nullptr,&callback,options).target.returned);
+    options.position_offset.x=std::numeric_limits<float>::quiet_NaN();bool rejected=false;
+    try{inputs.ConfigureEntity(&parameters,&entity,&other_target,&callback,options);}catch(const std::invalid_argument&){rejected=true;}
+    Check(rejected && roots.size()==persistent_roots);
     Check(inputs.Close() && roots.empty() && !inputs.Manager().call.returned);texts.clear();
 }

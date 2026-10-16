@@ -2,15 +2,17 @@
 #include <hksr/presentation/effects/OwnedEffectRequest.hpp>
 
 namespace hksr::sdk_v1 {
-struct PresentationEffects::State {EffectRequestServices services;EffectControlServices control;};
+struct PresentationEffects::State {EffectRequestServices services;EffectControlServices control;ConfigureEntityEffect configure_entity;};
 PresentationEffects::PresentationEffects(EffectRequestServices services):PresentationEffects(std::move(services),{}){}
-PresentationEffects::PresentationEffects(EffectRequestServices services,EffectControlServices control):state_(new State{std::move(services),std::move(control)}){}
+PresentationEffects::PresentationEffects(EffectRequestServices services,EffectControlServices control):PresentationEffects(std::move(services),std::move(control),{}){}
+PresentationEffects::PresentationEffects(EffectRequestServices services,EffectControlServices control,ConfigureEntityEffect configure)
+    :state_(new State{std::move(services),std::move(control),std::move(configure)}){}
 PresentationEffects::~PresentationEffects(){delete state_;}
 std::unique_ptr<OwnedEffectRequest> PresentationEffects::CreateRequest(const std::string& prefix) const {
     auto services=state_->services;
     if(services.trace && !prefix.empty())
         services.trace=[sink=services.trace,prefix](const std::string& text){sink(prefix+text);};
-    return std::make_unique<OwnedEffectRequest>(std::move(services));
+    return std::make_unique<OwnedEffectRequest>(std::move(services),state_->configure_entity);
 }
 bool PresentationEffects::HasExitEvents() const{return static_cast<bool>(state_->services.exit_events);}
 std::unique_ptr<EventRegistrationLease> PresentationEffects::RegisterExit(EntityToken owner,const std::string& state,

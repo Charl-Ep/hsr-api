@@ -20,6 +20,7 @@ struct Signals {
 }
 struct OwnedEffectRequest::State {
     EffectRequestServices services;
+    ConfigureEntityEffect configure_entity;
     api::ManagedRoots roots;
     std::vector<api::ManagedRootId> handles;
     std::shared_ptr<Signals> signals=std::make_shared<Signals>();
@@ -91,13 +92,24 @@ struct OwnedEffectRequest::State {
         else status.detail="unsubmitted release unresolved; retained receipt, no repeated decrement";
     }
 };
-OwnedEffectRequest::OwnedEffectRequest(EffectRequestServices services):state_(new State(std::move(services))){}
+OwnedEffectRequest::OwnedEffectRequest(EffectRequestServices services):OwnedEffectRequest(std::move(services),{}){}
+OwnedEffectRequest::OwnedEffectRequest(EffectRequestServices services,ConfigureEntityEffect configure):state_(new State(std::move(services))) {
+    state_->configure_entity=std::move(configure);
+}
 OwnedEffectRequest::~OwnedEffectRequest(){delete state_;}
 const EffectRequestStatus& OwnedEffectRequest::Status() const{return state_->status;}
 void OwnedEffectRequest::Cancel(bool fade) {
     state_->status.cancelled=true;state_->fade=fade;
 }
 void OwnedEffectRequest::Start(void* entity,void* path) {
+    StartImpl(entity,entity,path,nullptr);
+}
+void OwnedEffectRequest::StartEntity(void* caster,void* target,void* path,const EntityEffectOptions& options) {
+    // Engine preparation may reenter the caller and replace its action data.
+    const auto captured=options;
+    StartImpl(caster,target,path,&captured);
+}
+void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const EntityEffectOptions* options) {
     auto& s=*state_;auto& out=s.status;
     if(out.started)throw std::logic_error("effect request already started");
     out.started=true;
@@ -105,7 +117,9 @@ void OwnedEffectRequest::Start(void* entity,void* path) {
     s.busy=true;
     struct Exit{bool& busy;~Exit(){busy=false;}} exit{s.busy};
     try {
+        if(options && !s.configure_entity)throw std::runtime_error("entity effect configuration unavailable");
         s.Keep(entity);s.Keep(path);
+        if(target!=entity)s.Keep(target);
         s.Trace("prepare manager/path begin");
         const auto service=s.services.manager();
         if(!service.call.returned || !service.object)throw std::runtime_error("current effect manager unavailable");
@@ -123,7 +137,8 @@ void OwnedEffectRequest::Start(void* entity,void* path) {
             [signals=s.signals](api::EffectCompletionEvent event){signals->Receive(event);});
         const auto callback=s.callback->Create();
         if(!callback.call.returned || !callback.object)throw std::runtime_error("effect completion creation failed");
-        const auto configured=s.services.configure(out.reference.parameters,entity,callback.object);
+        const auto configured=options?s.configure_entity(out.reference.parameters,entity,target,callback.object,*options):
+            s.services.configure(out.reference.parameters,entity,callback.object);
         s.Trace("configure target="+std::to_string(configured.target.returned)+" callback="+std::to_string(configured.completion.returned));
         if(!configured.target.returned || !configured.completion.returned)throw std::runtime_error("effect request configuration incomplete");
         if(out.cancelled){s.ReleaseUnsubmitted();}

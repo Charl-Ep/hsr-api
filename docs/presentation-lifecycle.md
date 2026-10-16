@@ -104,6 +104,10 @@ When a carrier has no adventure MonoAvatar, the session can use an existing Look
 
 `Start` retains the request's parameters, original manager and completion bridge. Callbacks record signals; the owner frame performs removal. After cancellation, advance `Service` until `Status().closed`. An unmatched removal is retried after a new successful-load callback. A reused parameter-pool generation ends writes through the old request.
 
+`StartEntity(caster, target, path, options)` keeps the creator and recipient distinct. It maps the path through the caster, retains both entities, and uses the official parameter pool and asynchronous manager. Options specify the engine name, position/rotation offsets, optional scale, attachment, fade-in and immediate simulation. Inputs are copied before engine calls; cancellation uses the same request lifecycle as `Start`.
+
+This entry accepts resolved entity-relative inputs. It does not evaluate target aliases or task expressions, consult global mutex rules, hide entities during loading, attach Timelines or run post-load subobject tasks. Programs own reuse and logical effect names. Engine `unique_name` is optional and is not an ownership boundary.
+
 For an independently attributed official submission, `TrackSubmitted(manager, reference)` retains the receipt without submitting again or replacing callbacks. It returns false if retention fails; ownership then remains with the caller. Service tracked receipts after the original call returns. A newly observed loaded instance permits another cancellation attempt. This mode does not report official callbacks through the request's completion counters.
 
 Create an effect observer during preparation, then call its `ActivateOnCurrentThread` on the owner frame. `before` receives the retained manager, request generation and entity provenance before the official call. Synchronous and asynchronous forwarding of the same request is reported once. `after` reports normal return or exception, not loading success. Stop the observer on the owner thread before releasing its callback targets.

@@ -1,12 +1,25 @@
 #pragma once
 #include "../../metadata/RuntimeMetadata.hpp"
 #include "../../managed/ManagedRoots.hpp"
+#include "../../world/WorldPlacement.hpp"
+#include <optional>
+#include <functional>
 
 namespace hksr::sdk_v1 {
 struct EffectInputResult {CallResult target,completion;};
-// Engine-thread reflection for the manager and two PUBLIC request references.
-// FieldInfo.SetValue performs managed reference assignment; no presumed field
-// offsets or manual GC pointer writes. The request must still be unsubmitted.
+// Entity-relative visual inputs. Path mapping uses the explicit caster. This
+// is not a TriggerEffect interpreter: no target evaluator, mutex lookup,
+// loading hide, Timeline attachment or post-load subobject modifications.
+struct EntityEffectOptions {
+    std::string unique_name;
+    Position3 position_offset{},rotation_offset{};
+    std::optional<Position3> scale;
+    bool attach_to_target=false,fade_in=true,simulate_immediately=false;
+};
+using ConfigureEntityEffect=std::function<EffectInputResult(void*,void*,void*,void*,const EntityEffectOptions&)>;
+// Engine-thread configuration of fresh unsubmitted requests. Managed references
+// use FieldInfo.SetValue. Entity options write only qualified blittable fields
+// at their current declared offsets and use the official attachment setter.
 class HKSR_API EffectInputs {
 public:
     EffectInputs(MethodResolver&,ObjectMetadata&,ManagedObjects&,ReferenceMethods);
@@ -15,6 +28,8 @@ public:
     EffectInputs& operator=(const EffectInputs&)=delete;
     ObjectResult Manager(); // unrooted result, read current global each time
     EffectInputResult Configure(void* retained_parameters,void* retained_target,void* retained_completion);
+    EffectInputResult ConfigureEntity(void* retained_parameters,void* retained_caster,
+        void* retained_target,void* retained_completion,const EntityEffectOptions&);
     bool Close();
 private:struct State;State* state_;
 };

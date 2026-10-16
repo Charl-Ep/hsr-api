@@ -315,7 +315,10 @@ std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices()
     EffectControlServices control;
     control.progress=[s](EffectReference ref,float value,float duration){return s->EffectControls().SetProgress(ref,value,duration);};
     control.animator=[s](EffectReference ref,int hash,float duration,bool restart){return s->EffectControls().SetAnimatorState(ref,hash,duration,restart);};
-    return std::make_shared<PresentationEffects>(std::move(*services),std::move(control));
+    return std::make_shared<PresentationEffects>(std::move(*services),std::move(control),
+        [s](void* parameters,void* caster,void* target,void* callback,const EntityEffectOptions& options) {
+            return s->effect_inputs->ConfigureEntity(parameters,caster,target,callback,options);
+        });
 }
 PresentationIsolationStatus PresentationContext::IsolationStatus() const{return storage_->state->isolation_status;}
 std::unique_ptr<EffectSubmissions> PresentationContext::CreateEffectObserver(

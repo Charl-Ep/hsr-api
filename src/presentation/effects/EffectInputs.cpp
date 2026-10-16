@@ -1,5 +1,8 @@
 #include <hksr/presentation/effects/EffectInputs.hpp>
 #include <hksr/native/Invocation.hpp>
+#include <hksr/native/MetadataReader.hpp>
+#include <algorithm>
+#include <cmath>
 #include <map>
 #include <stdexcept>
 
@@ -9,6 +12,8 @@ struct EffectInputs::State {
     std::vector<ManagedRootId> retained;
     struct Field {void* object=nullptr;Method call;};
     std::map<std::string,Field> fields;
+    std::map<std::string,DeclaredField> entity_fields;
+    Method attach;
     bool closed=false;
     State(MethodResolver& m,ObjectMetadata& d,ManagedObjects& o,ReferenceMethods r):methods(m),metadata(d),objects(o),roots(r){}
     void* Keep(ObjectResult value) {
@@ -32,6 +37,42 @@ struct EffectInputs::State {
             {"System.Object","System.Object","System.Reflection.BindingFlags","System.Reflection.Binder","System.Globalization.CultureInfo"});
         fields.emplace(key,result);return result;
     }
+    void PrepareEntity(void* parameters) {
+        if(attach.code)return;
+        const auto type=metadata.ReadObjectTypeName(parameters);
+        if(type.name_space!="RPG.Client" || type.name!="TriggerEffectParams")throw std::invalid_argument("entity effect parameters type differs");
+        const auto declared=metadata.ReadObjectFields(parameters);
+        std::map<std::string,DeclaredField> resolved;
+        for(const auto& item:std::vector<std::pair<const char*,const char*>>{
+            {"PositionOffset","System.Nullable<UnityEngine.Vector3>"},{"RotationOffset","System.Nullable<UnityEngine.Vector3>"},
+            {"CustomScale","System.Nullable<UnityEngine.Vector3>"},{"IsNeedFadeIn","System.Boolean"},
+            {"ForceSimulateImmediately","System.Boolean"},{"ParamEntityUsage","RPG.GameCore.EffectParamEntityUsage"},
+            {"TowardMaxPitchAngle","System.Single"}}) {
+            const DeclaredField* field=nullptr;
+            for(const auto& value:declared)if(value.owner_namespace=="RPG.Client" && value.owner_name=="TriggerEffectParams" && value.name==item.first) {
+                if(field || value.type!=item.second || !value.flags_observed || (value.flags&0x10))
+                    throw std::runtime_error(std::string("entity effect field differs: ")+item.first);
+                field=&value;
+            }
+            if(!field)throw std::runtime_error(std::string("entity effect field absent: ")+item.first);
+            resolved.emplace(item.first,*field);
+        }
+        auto method=methods.Resolve("RPG.Client","TriggerEffectParams","set_IsAttachToTargetEntity","System.Void",{"System.Boolean"});
+        entity_fields=std::move(resolved);attach=method;
+    }
+    template<class T>void Scalar(void* parameters,const char* name,const T& value) {
+        // Only audited blittable fields on a private, unsubmitted parameter
+        // object. Managed reference writes always use FieldInfo.SetValue.
+        if(!native::CopyMemoryChecked(static_cast<unsigned char*>(parameters)+entity_fields.at(name).offset,&value,sizeof(value)))
+            throw std::runtime_error(std::string("entity effect field write failed: ")+name);
+    }
+    CallResult Set(Field field,void* parameters,void* value) {
+        return native::CallVoid(field.call,field.object,parameters,value,0,static_cast<void*>(nullptr),static_cast<void*>(nullptr));
+    }
+    void ReleaseValue(ManagedRootId id) {
+        if(!id)return;
+        if(roots.Release(id).complete){roots.Forget(id);retained.erase(std::remove(retained.begin(),retained.end(),id),retained.end());}
+    }
 };
 EffectInputs::EffectInputs(MethodResolver& m,ObjectMetadata& d,ManagedObjects& o,ReferenceMethods r):state_(new State(m,d,o,r)){}
 EffectInputs::~EffectInputs(){delete state_;}
@@ -50,6 +91,43 @@ EffectInputResult EffectInputs::Configure(void* parameters,void* target,void* co
     if(out.target.returned)out.completion=native::CallVoid(callback.call,callback.object,parameters,completion,0,
         static_cast<void*>(nullptr),static_cast<void*>(nullptr));
     return out;
+}
+EffectInputResult EffectInputs::ConfigureEntity(void* parameters,void* caster,void* target,void* completion,const EntityEffectOptions& options) {
+    auto& s=*state_;EffectInputResult out;
+    if(s.closed || !parameters || !caster || !target || !completion)return out;
+    const auto finite=[](Position3 value){return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);};
+    if(!finite(options.position_offset) || !finite(options.rotation_offset) || (options.scale && !finite(*options.scale)) ||
+        options.unique_name.find('\0')!=std::string::npos)throw std::invalid_argument("invalid entity effect visual inputs");
+    s.PrepareEntity(parameters);
+    const auto caster_field=s.Get("TriggerEffectParams","CasterEntity",false);
+    const auto target_field=s.Get("TriggerEffectParams","TargetEntity",false);
+    const auto name_field=s.Get("TriggerEffectParams","UniqueEffectName",false);
+    const auto callback_field=s.Get("TriggerEffectParams","CompleteCallback",false);
+    ManagedRootId text_root=0;
+    try {
+        auto* name=s.Keep(s.objects.NewStringUtf8(options.unique_name.c_str()));text_root=s.retained.back();
+        out.target=s.Set(caster_field,parameters,caster);
+        if(out.target.returned)out.target=s.Set(target_field,parameters,target);
+        if(out.target.returned)out.target=s.Set(name_field,parameters,name);
+        if(out.target.returned) {
+            // Qualified HSR nullable Vector3 storage: value at +0, presence at
+            // +12. Source vectors and parameter offsets are distinct contracts.
+            struct NullableVector {Position3 value;std::uint8_t present;std::uint8_t padding[3]{};};
+            static_assert(sizeof(NullableVector)==16 && offsetof(NullableVector,present)==12);
+            const NullableVector position{options.position_offset,1},rotation{options.rotation_offset,1};
+            const NullableVector scale{options.scale.value_or(Position3{}),static_cast<std::uint8_t>(options.scale.has_value())};
+            s.Scalar(parameters,"PositionOffset",position);s.Scalar(parameters,"RotationOffset",rotation);s.Scalar(parameters,"CustomScale",scale);
+            s.Scalar(parameters,"IsNeedFadeIn",static_cast<std::uint8_t>(options.fade_in));
+            s.Scalar(parameters,"ForceSimulateImmediately",static_cast<std::uint8_t>(options.simulate_immediately));
+            // Original task default is LookAt. ParamEntity stays null: no
+            // toward evaluator or corresponding completion processing implied.
+            s.Scalar(parameters,"ParamEntityUsage",std::int32_t{1});
+            s.Scalar(parameters,"TowardMaxPitchAngle",90.0f);
+            out.target=native::CallVoid(s.attach,parameters,options.attach_to_target);
+        }
+        if(out.target.returned)out.completion=s.Set(callback_field,parameters,completion);
+    }catch(...){s.ReleaseValue(text_root);throw;}
+    s.ReleaseValue(text_root);return out;
 }
 bool EffectInputs::Close() {
     auto& s=*state_;s.closed=true;s.fields.clear();

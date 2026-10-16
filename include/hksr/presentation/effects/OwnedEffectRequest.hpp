@@ -39,10 +39,12 @@ struct EffectRequestStatus {
 class HKSR_API OwnedEffectRequest {
 public:
     explicit OwnedEffectRequest(EffectRequestServices services);
+    OwnedEffectRequest(EffectRequestServices,ConfigureEntityEffect);
     ~OwnedEffectRequest();
     OwnedEffectRequest(const OwnedEffectRequest&)=delete;
     OwnedEffectRequest& operator=(const OwnedEffectRequest&)=delete;
     void Start(void* entity,void* path);
+    void StartEntity(void* caster,void* target,void* path,const EntityEffectOptions&);
     // Track a receipt captured at an official submission boundary. The caller
     // must establish ownership and retain both inputs through this call.
     // Does not submit again, alter inputs, or replace official callbacks.
@@ -55,6 +57,7 @@ public:
     void Service();
     const EffectRequestStatus& Status() const;
 private:
+    void StartImpl(void* caster,void* target,void* path,const EntityEffectOptions*);
     struct State;State* state_;
 };
 }
