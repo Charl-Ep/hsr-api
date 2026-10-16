@@ -99,6 +99,7 @@ void TestRuntimeHost();
 void TestAnimatorCatalog();
 void TestEffectCompletion();
 void TestEffectAccess();
+void TestEffectControl();
 void TestEffectRelations();
 void TestEffectQueries();
 void TestEffectInputs();
@@ -127,6 +128,7 @@ void RunTests(int argc, char** argv){
     TestTimelineGraph();
     TestEffectCompletion();
     TestEffectAccess();
+    TestEffectControl();
     TestEffectRelations();
     TestEffectQueries();
     TestEffectInputs();

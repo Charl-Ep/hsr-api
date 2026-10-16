@@ -44,6 +44,8 @@ struct PresentationContext::State {
     Trace trace;
     std::unique_ptr<PresentationIsolation> isolation;
     std::unique_ptr<EffectInputs> effect_inputs;
+    std::unique_ptr<EffectControl> effect_control;
+    bool effect_control_closed=false;
     std::optional<EffectAccess> effect_access;
     EffectCompletionAllocation completion;
     std::vector<std::unique_ptr<AnimationExitConfig>> exit_inputs;
@@ -74,6 +76,16 @@ struct PresentationContext::State {
     }
     void Log(const std::string& text) const noexcept {
         if(trace)try{trace(text);}catch(...){}
+    }
+    EffectControl& EffectControls() {
+        if(effect_control_closed)throw std::logic_error("presentation effect control closed");
+        if(!effect_control) {
+            const auto methods=ResolveEffectControl460(*metadata);
+            for(const auto& error:methods.binding_errors)Log("effect control binding: "+error);
+            effect_control=std::make_unique<EffectControl>(*effect_access,methods,bindings.references,objects,
+                metadata->ReadFields("RPG.Client","MonoEffect"));
+        }
+        return *effect_control;
     }
     std::unique_ptr<EventRegistrationLease> ExitEvents(EntityToken entity,const std::string& state,
         const std::vector<EffectRemovalSource>& sources) {
@@ -294,7 +306,12 @@ std::optional<EffectRequestServices> PresentationContext::Effects() const {
 }
 std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices() const {
     auto services=Effects();
-    return services?std::make_shared<PresentationEffects>(std::move(*services)):nullptr;
+    if(!services)return {};
+    const auto s=storage_->state;
+    EffectControlServices control;
+    control.progress=[s](EffectReference ref,float value,float duration){return s->EffectControls().SetProgress(ref,value,duration);};
+    control.animator=[s](EffectReference ref,int hash,float duration,bool restart){return s->EffectControls().SetAnimatorState(ref,hash,duration,restart);};
+    return std::make_shared<PresentationEffects>(std::move(*services),std::move(control));
 }
 PresentationIsolationStatus PresentationContext::IsolationStatus() const{return storage_->state->isolation_status;}
 PresentationContext::ControlFactory PresentationContext::Controls() const {
@@ -324,6 +341,8 @@ void PresentationContext::Collect(){if(storage_->state->isolation)storage_->stat
 bool PresentationContext::Close() {
     auto& s=*storage_->state;
     bool closed=!s.effect_inputs || s.effect_inputs->Close();
+    s.effect_control_closed=true;
+    if(s.effect_control && !s.effect_control->Close())closed=false;
     for(auto it=s.exit_inputs.begin();it!=s.exit_inputs.end();) {
         if((*it)->Close())it=s.exit_inputs.erase(it);else {closed=false;++it;}
     }

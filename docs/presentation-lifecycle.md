@@ -87,4 +87,6 @@ When a carrier has no adventure MonoAvatar, the session can use an existing Look
 
 Each request owns its parameters, original manager and completion bridge. Callbacks record signals; the owner frame performs removal. After cancellation, advance `Service` until `Status().closed`. An unmatched removal is retried after a new successful-load callback. A reused parameter-pool generation ends writes through the old request.
 
+`SetProgress(reference, value, seconds)` controls the loaded effect's progress plugin. `SetAnimatorState(reference, hash, duration, restart)` controls its first Animator on layer zero; duration is normalized transition time. Keep the request alive during either call. Neither operation loads a pending effect or searches by name. Results distinguish applied calls, pending loads, ended requests, unsupported components and failures. A fade request does not itself end control; parameter release or reuse does.
+
 See [animation inputs](animation.md) and the [C++ ownership contract](cpp-interface.md).

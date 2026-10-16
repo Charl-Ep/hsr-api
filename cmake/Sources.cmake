@@ -27,6 +27,7 @@ set(HKSR_API_SOURCES
     # adapters/presentation
     adapters/presentation/TimelineBoundaryMethods.cpp
     adapters/presentation/EffectAccessMethods.cpp
+    adapters/presentation/EffectControlMethods.cpp
     adapters/presentation/EffectCompletionMethods.cpp
 
     # adapters/runtime
@@ -115,6 +116,7 @@ set(HKSR_API_SOURCES
 
     # src/presentation/effects
     src/presentation/effects/EffectAccess.cpp
+    src/presentation/effects/EffectControl.cpp
     src/presentation/effects/EffectCompletion.cpp
     src/presentation/effects/EffectInputs.cpp
     src/presentation/effects/EffectQueries.cpp
@@ -222,6 +224,7 @@ set(HKSR_API_TEST_SOURCES
 
     # tests/presentation/effects
     tests/presentation/effects/EffectAccessTests.cpp
+    tests/presentation/effects/EffectControlTests.cpp
     tests/presentation/effects/EffectCompletionTests.cpp
     tests/presentation/effects/EffectInputsTests.cpp
     tests/presentation/effects/EffectQueryTests.cpp

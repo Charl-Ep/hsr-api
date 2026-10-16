@@ -1,5 +1,6 @@
 #pragma once
 #include "../../Export.hpp"
+#include "EffectControl.hpp"
 #include <memory>
 #include <string>
 #include <vector>
@@ -16,6 +17,7 @@ class EventRegistrationLease;
 class HKSR_API PresentationEffects {
 public:
     explicit PresentationEffects(EffectRequestServices); // explicit low-level provider
+    PresentationEffects(EffectRequestServices,EffectControlServices);
     ~PresentationEffects();
     PresentationEffects(const PresentationEffects&)=delete;
     PresentationEffects& operator=(const PresentationEffects&)=delete;
@@ -24,6 +26,9 @@ public:
     std::unique_ptr<EventRegistrationLease> RegisterExit(EntityToken,const std::string& state,
         const std::vector<EffectRemovalSource>&) const;
     void Trace(const std::string&) const;
+    EffectControlResult SetProgress(EffectReference,float progress,float transition_seconds=0) const;
+    EffectControlResult SetAnimatorState(EffectReference,int state_hash,
+        float normalized_transition_duration=0,bool restart=true) const;
 private:
     struct State;
     State* state_;

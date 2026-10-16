@@ -47,6 +47,9 @@ public:
         return context_->Animations()(owner);
     }
     std::shared_ptr<const hksr::api::PresentationEffects> Effects() {return context_->EffectServices();}
+    hksr::api::EffectControlResult EffectProgress(hksr::api::EffectReference ref) {
+        return context_->EffectServices()->SetProgress(ref,0.5f,0.1f);
+    }
     std::optional<hksr::api::ActorAnimatorView> Animator(hksr::api::EntityToken owner) const {
         return context_->ReadAnimator(owner);
     }
