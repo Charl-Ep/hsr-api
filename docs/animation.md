@@ -40,6 +40,8 @@ Writes are recorded before invocation. Retain an override after a partial failur
 
 ## Preparation relations
 
+`OfficialCatalog::BeginAbilitySources` reads task declarations on the official thread with a per-call time budget. `ProgressiveAbilitySourceRead::DrainCompleted` transfers fully traversed roots before the batch finishes; shared nodes remain cached across roots. `Done` includes reference cleanup, and `Take` returns undrained results. Cancellation discards undelivered values and drains retained references. A single native call cannot be interrupted by the budget.
+
 `FindPreparationSequences` examines each ability's straight `OnStart` list in an `AbilitySources` snapshot. It pairs a continuation with the nearest preceding mapping for the same control slot and retains intervening animation declarations. It preserves flags, targets, child indices and unread fields.
 
 The query does not flatten branches or execute gameplay predicates. Consumers use these declarations to select visual playback; the SDK does not execute complete battle skill graphs.

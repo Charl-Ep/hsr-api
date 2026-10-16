@@ -1,10 +1,28 @@
 #include "CatalogReader.hpp"
 
 namespace hksr::sdk_v1 {
-struct OfficialCatalog::State::AbilityRead final : AbilitySourceRead {
+struct OfficialCatalog::State::AbilityRead final : ProgressiveAbilitySourceRead {
     std::shared_ptr<State> owner;
     State& s; TypeRelationships& types; State::Scope scope;
     AbilitySources output;
+    CompletedAbilitySources completed;
+    bool active_ability=false;
+    void CompleteAbility() {
+        if(!active_ability)return;
+        completed.abilities.push_back(ability);
+        auto append=[](auto& target,auto& source) {
+            target.insert(target.end(),std::make_move_iterator(source.begin()),std::make_move_iterator(source.end()));
+        };
+        append(completed.sources.animations,output.animations);
+        append(completed.sources.waits,output.waits);
+        append(completed.sources.removals,output.removals);
+        append(completed.sources.references,output.references);
+        append(completed.sources.skill_mappings,output.skill_mappings);
+        append(completed.sources.skill_continuations,output.skill_continuations);
+        append(completed.sources.issues,output.issues);
+        completed.sources.nodes_read+=output.nodes_read;
+        output={};active_ability=false;
+    }
     struct Edge { ConfigStep step; void* object; };
     struct Node {
         std::optional<AnimationTaskSource> animation;
@@ -221,13 +239,17 @@ struct OfficialCatalog::State::AbilityRead final : AbilitySourceRead {
     void Step() {
         if(draining) {
             if(!scope.ids.empty())scope.ReleaseOne();
-            else {done=true;if(cancelled)output={};}
+            else {done=true;if(cancelled){output={};completed={};}}
             return;
         }
         if(!initialized) {
             initialized=true;
             try {if(!abilities.empty())load=s.Static("AbilityJsonTable","GetTurnBasedAbility","RPG.GameCore.TurnBasedAbilityConfig",{"System.String"});}
-            catch(const std::exception& e){output.issues.push_back({{},e.what(),{}});draining=true;}
+            catch(const std::exception& e){
+                completed.sources.issues.push_back({{},e.what(),{}});
+                std::set<std::string> unique(abilities.begin(),abilities.end());
+                completed.abilities.assign(unique.begin(),unique.end());draining=true;
+            }
             return;
         }
         if(current) {
@@ -243,9 +265,11 @@ struct OfficialCatalog::State::AbilityRead final : AbilitySourceRead {
             else {current=std::move(work);building={};fields.clear();next_field=0;sequence={};BeginNode(current->object);}
             return;
         }
+        CompleteAbility();
         if(next_ability==abilities.size()){draining=true;return;}
         ability=abilities[next_ability++];
         if(!visited_abilities.insert(ability).second)return;
+        active_ability=true;
         visited.clear();
         try {
             Require(!ability.empty(),"ability key empty");
@@ -260,9 +284,15 @@ struct OfficialCatalog::State::AbilityRead final : AbilitySourceRead {
         if(done)return;
         do {Step();}while(!done && std::chrono::steady_clock::now()-start<std::chrono::microseconds(budget_microseconds));
     }
-    void Cancel() override {cancelled=true;draining=true;if(done)output={};}
+    void Cancel() override {cancelled=true;draining=true;output={};completed={};}
     bool Done() const override {return done;}
-    AbilitySources Take() override {Require(done,"ability discovery still in progress");return std::move(output);}
+    AbilitySources Take() override {
+        Require(done,"ability discovery still in progress");
+        auto result=std::move(completed.sources);completed={};return result;
+    }
+    CompletedAbilitySources DrainCompleted() override {
+        auto result=std::move(completed);completed={};return result;
+    }
 };
 std::unique_ptr<AbilitySourceRead> OfficialCatalog::BeginAbilitySources(std::vector<std::string> abilities,TypeRelationships& types) {
     return std::make_unique<State::AbilityRead>(*owner_,std::move(abilities),types);

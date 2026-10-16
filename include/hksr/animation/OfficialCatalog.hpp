@@ -208,6 +208,18 @@ public:
     virtual bool Done() const=0;
     virtual AbilitySources Take()=0; // only after Done; cancelled reads return no partial catalog
 };
+struct CompletedAbilitySources {
+    std::vector<std::string> abilities; // fully traversed roots, including failed/empty roots
+    AbilitySources sources;
+};
+// Optional streaming interface; the base reader's vtable remains unchanged.
+// DrainCompleted transfers complete roots only. Take returns any undrained
+// results after Done. Published values contain no managed references; the
+// reader retains its shared node cache until completion/cancellation drains it.
+class ProgressiveAbilitySourceRead : public AbilitySourceRead {
+public:
+    virtual CompletedAbilitySources DrainCompleted()=0;
+};
 struct NpcMotionRow {
     std::uint32_t id=0;
     std::string indexed_name;

@@ -296,6 +296,37 @@ void TestActionConfig() {
         for(std::size_t j=0;j<a.path.size();++j)Check(a.path[j].field==b.path[j].field &&
             a.path[j].index==b.path[j].index && a.path[j].key==b.path[j].key && a.path[j].selection==b.path[j].selection);
     }
+    {
+    // Complete roots can be consumed before the batch/GC drain ends; shared
+    // nodes still get read once, and undrained legacy Take retains all results.
+    input.full_types=input.field_reads=0;
+    auto streaming=catalog.BeginAbilitySources({"abilityA","abilityB","abilityA","missing"},input);
+    auto* progress=dynamic_cast<ProgressiveAbilitySourceRead*>(streaming.get());Check(progress!=nullptr);
+    AbilitySources combined;std::vector<std::string> delivered;bool early_delivery=false;
+    while(!streaming->Done()) {
+        streaming->Advance(0);auto part=progress->DrainCompleted();
+        if(!part.abilities.empty())early_delivery|=!streaming->Done();
+        delivered.insert(delivered.end(),part.abilities.begin(),part.abilities.end());
+        combined.animations.insert(combined.animations.end(),part.sources.animations.begin(),part.sources.animations.end());
+        combined.issues.insert(combined.issues.end(),part.sources.issues.begin(),part.sources.issues.end());
+        combined.nodes_read+=part.sources.nodes_read;
+    }
+    Check(early_delivery && delivered==std::vector<std::string>({"abilityA","abilityB","missing"}));
+    Check(roots.empty() && streaming->Take().animations.empty() && progress->DrainCompleted().abilities.empty());
+    Check(input.full_types==2 && input.field_reads==4 && combined.nodes_read==graph.nodes_read);
+    Check(combined.animations.size()==graph.animations.size() && combined.issues.size()==graph.issues.size());
+    for(std::size_t i=0;i<graph.animations.size();++i) {
+        Check(combined.animations[i].ability==graph.animations[i].ability && combined.animations[i].state.value==graph.animations[i].state.value);
+        Check(combined.animations[i].path.size()==graph.animations[i].path.size());
+    }
+    auto partially_cancelled=catalog.BeginAbilitySources({"abilityA","abilityB"},input);
+    auto* partial=dynamic_cast<ProgressiveAbilitySourceRead*>(partially_cancelled.get());
+    CompletedAbilitySources first;
+    while(first.abilities.empty()){partially_cancelled->Advance(0);first=partial->DrainCompleted();}
+    partially_cancelled->Cancel();while(!partially_cancelled->Done())partially_cancelled->Advance(0);
+    Check(first.abilities==std::vector<std::string>{"abilityA"} && !first.sources.animations.empty());
+    Check(partial->DrainCompleted().abilities.empty() && partially_cancelled->Take().animations.empty() && roots.empty());
+    }
     auto cancelled=catalog.BeginAbilitySources({"abilityA","abilityB"},input);
     cancelled->Advance(0);cancelled->Advance(0);
     Check(!roots.empty());const auto before_cancel=loads;cancelled->Cancel();
