@@ -20,18 +20,23 @@ struct ModelMethods { Method begin,cancel,change,events,can_change,restore; };
 class ModelProfile {
 public:
     HKSR_API explicit ModelProfile(ModelMethods methods);
+    HKSR_API ModelProfile(ModelMethods methods,Method pending);
     HKSR_API ~ModelProfile();
     HKSR_API ModelProfile(const ModelProfile&) noexcept;
     HKSR_API ModelProfile& operator=(const ModelProfile&) noexcept;
     HKSR_API CallResult Begin(void* operation,void* entity,ModelInputs inputs,bool asynchronous,void* callback) const;
     HKSR_API CallResult Cancel(void* operation) const;
+    HKSR_API bool HasAsyncCompletion() const;
+    HKSR_API Observed<bool> Pending(void* operation) const;
     HKSR_API ChangeResult Change(void* model,void* path,void* prepared_root) const;
     HKSR_API ChangeResult CanChange(void* model,void* path,void** resolved_path) const;
     HKSR_API CallResult ReplaceEvents(void* component,void* paths,void* excluded_layers) const;
     HKSR_API CallResult Restore(void* model,void* root_path,void* entity_config) const;
 private:
-    std::shared_ptr<const ModelMethods> methods_;
+    struct State;
+    std::shared_ptr<const State> methods_;
 };
 // Locks ONLY the declared method contract. Not a version authorization function.
 HKSR_API ModelMethods ResolveModelMethods(MethodResolver& resolver);
+HKSR_API Method ResolveModelPending(MethodResolver& resolver);
 }

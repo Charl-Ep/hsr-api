@@ -258,7 +258,8 @@ ModelRequestServices PresentationContext::ModelRequests() const {
     const auto& b=storage_->state->bindings;
     std::function<std::unique_ptr<EventValueLease>()> values;
     if(storage_->state->metadata)values=[s=storage_->state]{return std::make_unique<EventValueInputs>(*s->metadata,*s->metadata,*s->metadata,s->bindings.references);};
-    return {ModelProfile(b.profile),ModelAccess(b.model),ProfileInputs(b.profile_inputs),SceneObjects(b.scene),
+    const auto pending=storage_->state->metadata?ResolveModelPending(*storage_->state->metadata):Method{};
+    return {ModelProfile(b.profile,pending),ModelAccess(b.model),ProfileInputs(b.profile_inputs),SceneObjects(b.scene),
         AnimationEvents(b.events),ModelLoadCompleted,std::move(values)};
 }
 ControllerBindingServices PresentationContext::Controllers() const {

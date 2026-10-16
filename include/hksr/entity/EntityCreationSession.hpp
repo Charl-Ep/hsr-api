@@ -13,6 +13,8 @@ struct StoryCreateInput {
     EntityManager* manager=nullptr;
     std::string unique_name,model_path,adventure_config;
 };
+// Story creation requests official asynchronous model loading. A returned,
+// owned entity is not a loaded model; continue Service and observe readiness.
 class HKSR_API EntityCreationSession {
 public:
     EntityCreationSession(const EntityOwner&,Method map_factory,Method story_factory,ManagedObjects*,

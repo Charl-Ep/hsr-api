@@ -35,6 +35,7 @@ struct ModelProfileRequest::State {
     std::unique_ptr<EventValueLease> values_;
     std::unique_ptr<ModelVisibilityLease> visibility_;
     bool values_ready_=false;
+    bool asynchronous_=false;
     std::vector<std::unique_ptr<EventValueLease>> retired_values_;
 };
 ModelProfileRequest::State::State(EntityToken owner,GameWorld* world,
@@ -57,7 +58,9 @@ void ModelProfileRequest::State::Fail(const char* message) {
 bool ModelProfileRequest::State::LiveFrame(const WorldFrame& frame) {
     if(status_.closed) return false;
     if(TrackedEntities().IsDisposed(owner_) || TrackedEntities().Current(owner_.entity).generation!=owner_.generation) {
-        status_.phase=ModelRequestPhase::OwnerEnded; status_.operation_in_use=false; return false;
+        status_.phase=ModelRequestPhase::OwnerEnded;
+        if(!asynchronous_)status_.operation_in_use=false;
+        return false;
     }
     return frame.world==world_ && frame.disposing.read.returned && !frame.disposing.value;
 }
@@ -83,6 +86,11 @@ bool ModelProfileRequest::State::CancelOperation() {
         status_.cancel=services_.profile.Cancel(inputs_->Status().operation.object);
     }
     if(!status_.cancel.returned) { Fail("official model operation cancellation unresolved"); return false; }
+    if(asynchronous_) {
+        const auto pending=services_.profile.Pending(inputs_->Status().operation.object);
+        if(!pending.read.returned){Fail("official model cancellation status unavailable");return false;}
+        if(pending.value){Fail("official model cancellation has not settled");return false;}
+    }
     status_.operation_in_use=false;
     return true;
 }
@@ -96,6 +104,7 @@ void ModelProfileRequest::State::Submit(const WorldFrame& frame,CharacterModelCo
     status_.errors.clear(); status_.resolution={}; status_.submit={}; status_.cancel={};
     status_.cancel_attempted=false; status_.events_attempted=false; status_.event_replace={};
     status_.observation={}; status_.completed={}; status_.animator_initialized={};
+    asynchronous_=false;
     try {
         const auto& input=Selected(); void* resolved=nullptr;
         if(visibility_ && !visibility_->Select(owner_,model,destination==ModelDestination::Alternate))
@@ -122,10 +131,17 @@ void ModelProfileRequest::State::Submit(const WorldFrame& frame,CharacterModelCo
             status_.submit=services_.profile.Restore(model,input.model_path,inputs_->Status().baseline_entity_config);
         } else {
             status_.operation_in_use=true; // Begin may mutate before throwing.
-            status_.submit=services_.profile.Begin(inputs_->Status().operation.object,owner_.entity,input,false,nullptr);
+            asynchronous_=services_.profile.HasAsyncCompletion();
+            status_.submit=services_.profile.Begin(inputs_->Status().operation.object,owner_.entity,input,asynchronous_,nullptr);
         }
         if(!status_.submit.returned) throw std::runtime_error("official model submission failed; model may already have changed");
         if(!Current(frame,model)) return; // do not read an entity ended by a callback
+        if(asynchronous_) {
+            // Begin may return with the old model still loaded. Ownership and
+            // target checks happen after the official operation completes.
+            status_.phase=ModelRequestPhase::AwaitingModel;
+            return;
+        }
         const auto actual=services_.inputs.ModelPath(model);
         if(!actual.call.returned || !Matches(actual.object,expected_path_))
             throw std::runtime_error("submitted model differs from the official resolved target");
@@ -141,6 +157,11 @@ void ModelProfileRequest::State::Observe(const WorldFrame& frame,CharacterModelC
     OperationSpan timing("sdk.model.observe");
     if(!Current(frame,model) || status_.phase!=ModelRequestPhase::AwaitingModel) return;
     try {
+        if(asynchronous_ && status_.operation_in_use) {
+            const auto pending=services_.profile.Pending(inputs_->Status().operation.object);
+            if(!pending.read.returned)throw std::runtime_error("official model operation status unavailable");
+            if(pending.value)return;
+        }
         const auto path=services_.inputs.ModelPath(model);
         if(!path.call.returned || !Matches(path.object,expected_path_)) throw std::runtime_error("model path no longer belongs to submitted request");
         status_.observation=services_.model.Read(model);
@@ -214,7 +235,12 @@ void ModelProfileRequest::State::BindEvents(const WorldFrame& frame,CharacterMod
     } catch(const std::exception& e) { Fail(e.what()); }
 }
 bool ModelProfileRequest::State::Cancel(const WorldFrame& frame) {
-    if(!LiveFrame(frame)) return status_.phase==ModelRequestPhase::OwnerEnded;
+    if(!LiveFrame(frame)) {
+        if(status_.phase!=ModelRequestPhase::OwnerEnded)return false;
+        // The operation object is retained independently of the retired entity.
+        // Cancel only its resource request; never call the old model/world.
+        return !asynchronous_ || CancelOperation();
+    }
     if(!CancelOperation()) return false;
     if(!LiveFrame(frame)) return status_.phase==ModelRequestPhase::OwnerEnded;
     status_.phase=ModelRequestPhase::Cancelled; return true;

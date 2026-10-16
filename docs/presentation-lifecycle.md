@@ -47,6 +47,8 @@ Service the supplement before NPC retirement. The NPC session must outlive it. `
 
 `context.Entities()()` creates a single-use `EntityCreationSession`. Pass `StoryCreateInput` with the current world and manager, a unique name, a model prefab path and its adventure configuration path. The session retains its inputs and owns only entities reported by its creation scope. `Remove` and `Service` use the same disposal lifecycle as map NPCs.
 
+Story creation requests the official asynchronous model-loading path. Factory return establishes entity ownership, not model readiness. Keep the session alive and continue servicing it while the model loads, including when removal is requested before loading finishes.
+
 `context.EntityEvents()(session, world)` supplements the loaded model's events. Story actors use the performance-event list as their factory baseline. Keep the supplement alive and service it before retiring the entity.
 
 ## Model capture and transitions
@@ -58,6 +60,8 @@ Pass the request to `context.ModelTransitions()(entity, world, request)`. A null
 The transaction cancels pending loading, detaches its controller, waits for consumer overlays, loads/adopts the model, applies the controller and binds event inputs. `ModelTransitionConsumer` supplies synchronous detach/adopt and optional initial-output callbacks. Initial output is observed on a later official frame before readiness.
 
 A new `Select` supersedes a pending plan. `Cancel` is terminal. Replacing an action within the same model plan does not require restarting the transaction.
+
+Runtime-bound profile requests submit alternate models asynchronously. They wait for the official operation to stop, then verify the resolved path, model completion and Animator readiness before adopting events. A completed request that leaves the wrong path is a failure. Cancellation withdraws the resource request before input roots are released, including after entity disposal. Restoring the baseline entity configuration still uses the existing restore entry.
 
 Call `Close` before entity retirement to detach overrides; call it again after retirement to release retained event inputs. Reentrant close waits for the active call to unwind. Uncertain reference decrements are not repeated.
 

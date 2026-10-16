@@ -2,7 +2,12 @@
 #include <hksr/native/Invocation.hpp>
 
 namespace hksr::sdk_v1 {
-ModelProfile::ModelProfile(ModelMethods methods):methods_(std::make_shared<const ModelMethods>(std::move(methods))){}
+struct ModelProfile::State:ModelMethods {
+    Method pending;
+    State(ModelMethods value,Method read):ModelMethods(std::move(value)),pending(read){}
+};
+ModelProfile::ModelProfile(ModelMethods methods):ModelProfile(std::move(methods),{}){}
+ModelProfile::ModelProfile(ModelMethods methods,Method pending):methods_(std::make_shared<const State>(std::move(methods),pending)){}
 ModelProfile::~ModelProfile()=default;
 ModelProfile::ModelProfile(const ModelProfile&) noexcept=default;
 ModelProfile& ModelProfile::operator=(const ModelProfile&) noexcept=default;
@@ -12,6 +17,12 @@ CallResult ModelProfile::Begin(void* operation,void* entity,ModelInputs inputs,b
 }
 CallResult ModelProfile::Cancel(void* operation) const {
     return native::CallVoid(methods_->cancel,operation);
+}
+bool ModelProfile::HasAsyncCompletion() const {return methods_->pending.code!=nullptr;}
+Observed<bool> ModelProfile::Pending(void* operation) const {
+    Observed<bool> out;
+    if(operation)out.read=native::Call(methods_->pending,&out.value,operation);
+    return out;
 }
 ChangeResult ModelProfile::Change(void* model,void* path,void* root) const {
     ChangeResult result;result.call=native::Call(methods_->change,&result.changed,model,path,root);return result;

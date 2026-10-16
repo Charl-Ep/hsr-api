@@ -2,6 +2,9 @@
 #include "../../src/metadata/ResolveBatch.hpp"
 
 namespace hksr::sdk_v1 {
+Method ResolveModelPending(MethodResolver& resolver) {
+    return resolver.Resolve("","HLCPCNFMECN","LEHKGLNGAGF","System.Boolean",{});
+}
 ModelMethods ResolveModelMethods(MethodResolver& resolver){
     detail::ResolveBatch batch(resolver);
     ModelMethods result{

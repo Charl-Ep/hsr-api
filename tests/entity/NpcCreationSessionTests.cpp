@@ -54,7 +54,7 @@ GameEntity* __fastcall ReturnExisting(EntityManager*, MapNpcDefinition*, NpcData
 }
 GameEntity* __fastcall Story(EntityManager* m,int subtype,void* graph,void* model,void* entity_config,void* name,
     void* story_row,void* adventure,void* appearance,void* material_keys,bool option,void* completion,void* info) {
-    Check(m==manager && subtype==4 && !entity_config && !story_row && !appearance && !material_keys && !option && !completion && info==&metadata);
+    Check(m==manager && subtype==4 && !entity_config && !story_row && !appearance && !material_keys && option && !completion && info==&metadata);
     Check(*static_cast<std::string*>(graph)=="" && *static_cast<std::string*>(model)=="Player.prefab" &&
         *static_cast<std::string*>(name)=="independent" && *static_cast<std::string*>(adventure)=="Player.json");
     Check(roots.size()==6); // world, manager, four source strings; no NPC input.
@@ -254,12 +254,21 @@ void TestNpcCreationSessions() {
             factory_mode=mode;
             EntityCreationSession actor(owner,{},M(Story),&provider,methods,references);
             actor.Create(source);Check(actor.IsStory());
-            if(mode==0){Check(actor.Status().create_returned && actor.Status().entities.size()==1);actor.Remove();}
+            if(mode==0){
+                Check(actor.Status().create_returned && actor.Status().entities.size()==1);
+                objects[0].loaded=false;actor.Service(frame);
+                Check(!actor.Status().entities[0].observation.loaded.value && !actor.Status().closed);
+                objects[0].loaded=true;actor.Service(frame);
+                Check(actor.Status().entities[0].observation.loaded.value);actor.Remove();
+            }
             else Check(!actor.Status().create_returned);
             if(mode==2)Check(actor.Status().entities.empty() && !actor.Status().errors.empty());
             actor.Service(frame);Check(actor.Status().closed && roots.empty());
         }
         factory_mode=0;
+        EntityCreationSession pending(owner,{},M(Story),&provider,methods,references);
+        objects[0].loaded=false;pending.Create(source);pending.Remove();pending.Service(frame);
+        Check(pending.Status().closed && roots.empty());
     }
     RemoveEntityLifecycleHooksAtQuiescentPoint();
     std::cout << "NPC creation/loading/removal/natural-exit/rebuild tests passed through SDK and local lifecycle hooks; no game acceptance.\n";

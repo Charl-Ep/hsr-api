@@ -133,7 +133,7 @@ void EntityCreationSession::Create(const StoryCreateInput& input) {
         s.story_identifier=model;
         CreateEntityResult result;
         result.call=native::Call(s.story_factory,&result.entity,input.manager,4,graph,model,static_cast<void*>(nullptr),name,
-            static_cast<void*>(nullptr),config,static_cast<void*>(nullptr),static_cast<void*>(nullptr),false,static_cast<void*>(nullptr));
+            static_cast<void*>(nullptr),config,static_cast<void*>(nullptr),static_cast<void*>(nullptr),true,static_cast<void*>(nullptr));
         return result;
     });
 }
