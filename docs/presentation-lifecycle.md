@@ -17,6 +17,7 @@ Call `PresentationContext::Create(metadata, capabilities, policy, trace)` from `
 | `Controls()`, `Player()` | Control-session factory and current-player resolver |
 | `EffectServices()`, `Outfits()` | Optional effect and outfit services |
 | `CreateEffectObserver(before, after)` | Observer for official effect submissions from this client's entities |
+| `CreateEventConstructionObserver(before, tasks, after)` | Final animation-event inputs and task-list construction for this client's entities |
 | `CreateRoots()` | Independent GC-root collection |
 | `ReadMap()`, `ReadPlayerPlacement()` | Frame-local observations |
 | `ReadAnimator()`, `NpcMotionComponent()` | Current borrowed model/controller or FreeStyle component |
@@ -51,6 +52,16 @@ Service the supplement before NPC retirement. The NPC session must outlive it. `
 Story creation requests the official asynchronous model-loading path. Factory return establishes entity ownership, not model readiness. Keep the session alive and continue servicing it while the model loads, including when removal is requested before loading finishes.
 
 `context.EntityEvents()(session, world)` supplements the loaded model's events. Story actors use the performance-event list as their factory baseline. Keep the supplement alive and service it before retiring the entity.
+
+## Event construction observations
+
+Prepare `CreateEventConstructionObserver` before model creation and activate it on the owner thread. It shares the construction hook with `AnimationEventPolicy`; `before` receives the final inputs after all active policies. Baseline and inline events may have null registration and file references.
+
+`tasks` receives a core task-list factory's context, configuration collection, parent and returned executor array. Disabled or failed tasks can be omitted, so their indices are not a configuration-to-executor mapping. `after` reports whether event construction returned normally. Neither result describes a playback or proves visual output.
+
+A nested factory can receive a different context. Its enclosing construction identifies the call source, not ownership of every returned child.
+
+References are retained for their callback scope only. Retain anything needed afterwards. `Stop` detaches observations without removing game events; call it before releasing callback targets.
 
 ## Model capture and transitions
 

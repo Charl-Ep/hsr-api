@@ -31,6 +31,9 @@ class PresentationEffects;
 class EffectSubmissions;
 struct EffectSubmission;
 class AnimationEventPolicy;
+class AnimationEventConstruction;
+struct AnimationEventSource;
+struct AnimationTaskConstruction;
 class PresentationResources;
 class ModelBaselineCapture;
 class ModelProfileRequest;
@@ -128,6 +131,10 @@ public:
     using PlayerResolver=std::function<GameEntity*(const WorldFrame&)>;
     PlayerResolver Player() const;
     std::unique_ptr<AnimationEventPolicy> CreateAnimationPolicy(AnimationTaskPolicy) const;
+    std::unique_ptr<AnimationEventConstruction> CreateEventConstructionObserver(
+        std::function<void(const AnimationEventSource&)> before,
+        std::function<void(const AnimationEventSource&,const AnimationTaskConstruction&)> tasks,
+        std::function<void(const AnimationEventSource&,bool)> after) const;
     void Activate();
     void Collect();
     // Call only after owned requests, registrations and entities are closed.

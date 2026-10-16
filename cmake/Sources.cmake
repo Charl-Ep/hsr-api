@@ -128,6 +128,8 @@ set(HKSR_API_SOURCES
 
     # src/presentation/events
     src/presentation/events/AnimationEventPolicy.cpp
+    src/presentation/events/AnimationConstructionRoute.cpp
+    src/presentation/events/AnimationEventConstruction.cpp
     src/presentation/events/AnimationEvents.cpp
     src/presentation/events/AnimationExitConfig.cpp
     src/presentation/events/EventRegistrationLease.cpp

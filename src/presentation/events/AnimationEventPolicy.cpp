@@ -1,29 +1,16 @@
 #include <hksr/presentation/events/AnimationEventPolicy.hpp>
 #include <hksr/unity/ComponentConfig.hpp>
 #include "AnimationConfigSchema.hpp"
-#include "../../platform/NativeHooks.hpp"
+#include "AnimationConstructionRoute.hpp"
 #include <hksr/native/Invocation.hpp>
 #include <hksr/native/MetadataReader.hpp>
 #include <Windows.h>
 #include <atomic>
-#include <algorithm>
-#include <mutex>
 #include <sstream>
 
 namespace hksr::sdk_v1 {
 struct AnimationEventPolicy::State {
-    struct Arguments {void *receiver,*events,*behaviors,*groups,*logic,*context,*registration,*file,*metadata;};
-    using Original=void(__fastcall*)(void*,void*,void*,void*,void*,void*,void*,void*,void*);
-    struct Router {
-        detail::NativeHooks hook;
-        std::mutex install;
-        using Clients=std::vector<std::shared_ptr<State>>;
-        std::shared_ptr<const Clients> clients=std::make_shared<const Clients>();
-        // Retain failed root-cleanup receipts until process end. Never destroy
-        // them and pretend their GC handles were released.
-        std::vector<std::shared_ptr<State>> unresolved;
-    };
-    static Router& Route() {static auto* router=new Router;return *router;}
+    using Arguments=detail::AnimationConstructionArguments;
     MethodResolver& methods;ObjectMetadata& metadata;ManagedObjects& objects;
     ReferenceMethods references;ArrayMethods arrays;Method caster;
     ComponentConfig strings;
@@ -31,9 +18,7 @@ struct AnimationEventPolicy::State {
     detail::AnimationConfigSchema schema;
     Owns owns;Trace trace;
     std::atomic<DWORD> thread{0};
-    std::vector<std::unique_ptr<detail::ManagedConfigProjection>> pending;
     struct Invocation {
-        Invocation* previous=nullptr;
         std::shared_ptr<State> state;
         std::unique_ptr<detail::ManagedConfigProjection> projection;
         detail::ConfigProjection result;
@@ -84,7 +69,9 @@ struct AnimationEventPolicy::State {
         if(!projection)return;
         try {
             if(projection->Close()){projection.reset();return;}
-            Log("GC cleanup incomplete; receipt retained");pending.push_back(std::move(projection));
+            // This transaction can finish after its subscription was stopped.
+            // Keep unresolved handles independently of the subscriber lifetime.
+            projection.release();Log("GC cleanup incomplete; receipt retained until process exit");
         }catch(...) {
             // Keep an existing owner even if bookkeeping allocation failed.
             // Emergency retention leaks only on OOM/cleanup failure, never
@@ -116,21 +103,9 @@ struct AnimationEventPolicy::State {
         if(invocation)s.Close(invocation->projection);
         return nullptr;
     }
-    static Invocation* Begin(Arguments& args) noexcept {
-        Invocation* last=nullptr;
-        // Immutable subscription snapshot: clients cannot evict one another.
-        // Each policy still qualifies its own thread and exact entity owner.
-        // If a caller intentionally registers overlapping policies, compose
-        // their private projections; never mutate the source configuration.
-        const auto clients=std::atomic_load(&Route().clients);
-        for(const auto& client:*clients)if(auto* next=BeginClient(client,args)) {
-            next->previous=last;last=next;
-        }
-        return last;
-    }
     static void Finish(Invocation* raw,bool abnormal) noexcept {
-        while(raw) {
-            std::unique_ptr<Invocation> invocation(raw);raw=invocation->previous;auto& s=*invocation->state;
+        if(raw) {
+            std::unique_ptr<Invocation> invocation(raw);auto& s=*invocation->state;
             try {
                 std::ostringstream line;line<<"entity="<<invocation->entity<<" inspected="<<invocation->result.inspected
                     <<" copied="<<invocation->result.copied<<" disabled="<<invocation->result.disabled
@@ -143,34 +118,20 @@ struct AnimationEventPolicy::State {
             s.Close(invocation->projection);
         }
     }
-    static void __fastcall Detour(void* receiver,void* events,void* behaviors,void* groups,void* logic,
-        void* context,void* registration,void* file,void* metadata) {
-        Arguments args{receiver,events,behaviors,groups,logic,context,registration,file,metadata};
-        auto* invocation=Begin(args);
-        // A POD-only SEH finally preserves the original exception and runs
-        // cleanup for native/managed SEH as well as C++ unwind. Do not convert
-        // a failed official constructor into a successful empty registration.
-        __try {
-            reinterpret_cast<Original>(Route().hook.Original(0))(args.receiver,args.events,args.behaviors,args.groups,
-                args.logic,args.context,args.registration,args.file,args.metadata);
-        } __finally {Finish(invocation,AbnormalTermination()!=FALSE);}
-    }
 };
-struct AnimationEventPolicy::Holder {std::shared_ptr<State> state;};
+struct AnimationEventPolicy::Holder {
+    std::shared_ptr<State> state;
+    std::unique_ptr<detail::AnimationConstructionSubscription> subscription;
+};
 AnimationEventPolicy::AnimationEventPolicy(MethodResolver& m,ObjectMetadata& d,ManagedObjects& o,TypeRelationships& r,Fields f,
     ReferenceMethods refs,Owns owns,Trace trace,std::vector<std::string> disabled,std::vector<SelfPerformerRule> self_performers) {
-    auto& router=State::Route();std::lock_guard<std::mutex> lock(router.install);
     auto state=std::make_shared<State>(m,d,o,r,std::move(f),refs,std::move(owns),std::move(trace),std::move(disabled),std::move(self_performers));
-    if(!router.hook.Pending()) {
-        const auto method=m.Resolve("","HHECHLOIEJO","FGAHFIBMPCP","System.Void",{
-            "RPG.GameCore.SingleAnimEventConfig[]","RPG.GameCore.SingleAnimBehaviourEvent[]","RPG.GameCore.AnimGroupEventConfig[]",
-            "RPG.GameCore.LogicAnimEventEntry[]","RPG.GameCore.TaskContext","LDMKDJJLOIL","System.String"});
-        router.hook.Install({{"animation event configuration construction",method.code,reinterpret_cast<void*>(&State::Detour)}});
-    }
-    auto clients=std::make_shared<State::Router::Clients>(*std::atomic_load(&router.clients));
-    clients->push_back(state);
-    holder_=new Holder{state};
-    std::atomic_store(&router.clients,std::shared_ptr<const State::Router::Clients>(std::move(clients)));
+    auto holder=std::make_unique<Holder>();holder->state=state;
+    holder->subscription=std::make_unique<detail::AnimationConstructionSubscription>(m,true,
+        detail::AnimationConstructionParticipant{
+            [state](auto& args)->void*{return State::BeginClient(state,args);},
+            [](void* token,bool returned){State::Finish(static_cast<State::Invocation*>(token),!returned);}});
+    holder_=holder.release();
 }
 AnimationEventPolicy::~AnimationEventPolicy(){Stop();}
 void AnimationEventPolicy::ActivateOnCurrentThread() {
@@ -184,12 +145,8 @@ void AnimationEventPolicy::Stop() noexcept {
     if(!holder_)return;
     try {
         auto& state_=holder_->state;
-        auto& router=State::Route();std::lock_guard<std::mutex> lock(router.install);
         state_->thread.store(0);
-        auto clients=std::make_shared<State::Router::Clients>(*std::atomic_load(&router.clients));
-        clients->erase(std::remove(clients->begin(),clients->end(),state_),clients->end());
-        std::atomic_store(&router.clients,std::shared_ptr<const State::Router::Clients>(std::move(clients)));
-        if(!state_->pending.empty())router.unresolved.push_back(state_);
+        holder_->subscription->Stop();
         delete holder_;holder_=nullptr;
     }catch(...) {
         // A stopped retained holder has no engine callbacks; do not lose its

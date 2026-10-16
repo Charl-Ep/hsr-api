@@ -20,6 +20,7 @@
 #include <hksr/presentation/effects/EffectSubmissions.hpp>
 #include <hksr/presentation/events/AnimationExitConfig.hpp>
 #include <hksr/presentation/events/AnimationEventPolicy.hpp>
+#include <hksr/presentation/events/AnimationEventConstruction.hpp>
 #include <hksr/presentation/events/NpcEventSupplement.hpp>
 #include <hksr/presentation/events/NpcEventBindings.hpp>
 #include <hksr/control/ActorControlSession.hpp>
@@ -330,6 +331,15 @@ PresentationContext::ControlFactory PresentationContext::Controls() const {
         return std::make_unique<ActorControlSession>(entity,world,
             ActorControlBindings{b.references,b.lifetime,b.entity,b.actor_control,b.placement,b.arrays});
     };
+}
+std::unique_ptr<AnimationEventConstruction> PresentationContext::CreateEventConstructionObserver(
+    std::function<void(const AnimationEventSource&)> before,
+    std::function<void(const AnimationEventSource&,const AnimationTaskConstruction&)> tasks,
+    std::function<void(const AnimationEventSource&,bool)> after) const {
+    const auto s=storage_->state;
+    if(!s->metadata || !s->isolation)throw std::logic_error("event observation requires a prepared isolation context");
+    return std::make_unique<AnimationEventConstruction>(*s->metadata,s->bindings.references,
+        [s](GameEntity* entity){return s->isolation->Source(entity);},std::move(before),std::move(tasks),std::move(after),s->trace);
 }
 PresentationContext::PlayerResolver PresentationContext::Player() const {
     return [s=storage_->state](const WorldFrame& frame){return s->placement.PlayerEntity(frame);};

@@ -13,6 +13,7 @@
 #include <hksr/world/WorldMap.hpp>
 #include <hksr/world/WorldPlacement.hpp>
 #include <hksr/presentation/events/AnimationEventPolicy.hpp>
+#include <hksr/presentation/events/AnimationEventConstruction.hpp>
 #include <hksr/presentation/effects/PresentationEffects.hpp>
 #include <hksr/presentation/effects/EffectSubmissions.hpp>
 #include <hksr/runtime/RuntimeHost.hpp>
@@ -23,11 +24,13 @@ class ContextConsumer final:public hksr::api::RuntimeClient {
     std::unique_ptr<hksr::api::PresentationContext> context_;
     std::unique_ptr<hksr::api::AnimationEventPolicy> policy_;
     std::unique_ptr<hksr::api::EffectSubmissions> effects_;
+    std::unique_ptr<hksr::api::AnimationEventConstruction> event_sources_;
 public:
     void Prepare(hksr::api::RuntimeMetadata& metadata,hksr::api::RuntimeCapabilities capabilities) override {
         context_=hksr::api::PresentationContext::Create(metadata,capabilities,{});
         policy_=context_->CreateAnimationPolicy({});
         effects_=context_->CreateEffectObserver([](const auto&){},[](const auto&,bool){});
+        event_sources_=context_->CreateEventConstructionObserver([](const auto&){},[](const auto&,const auto&){},[](const auto&,bool){});
     }
     std::unique_ptr<hksr::api::ActorControlSession> Controls(hksr::api::EntityToken owner,hksr::api::GameWorld* world) {
         return context_->Controls()(owner,world);
@@ -66,8 +69,9 @@ public:
     }
     bool Frame(const hksr::api::WorldFrame&,bool stop) override {
         context_->Activate();
-        if(stop){effects_->Stop();return context_->Close();}
+        if(stop){effects_->Stop();event_sources_->Stop();policy_->Stop();return context_->Close();}
         effects_->ActivateOnCurrentThread();
+        event_sources_->ActivateOnCurrentThread();
         context_->Collect();return false;
     }
 };
