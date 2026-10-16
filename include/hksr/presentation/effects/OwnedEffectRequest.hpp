@@ -43,6 +43,14 @@ public:
     OwnedEffectRequest(const OwnedEffectRequest&)=delete;
     OwnedEffectRequest& operator=(const OwnedEffectRequest&)=delete;
     void Start(void* entity,void* path);
+    // Track a receipt captured at an official submission boundary. The caller
+    // must establish ownership and retain both inputs through this call.
+    // Does not submit again, alter inputs, or replace official callbacks.
+    // submit/completion counters describe Start only; Observe supplies the
+    // state of a tracked request. Call Service after the original stack returns.
+    // false means retention failed: the caller still owns the receipt. Service
+    // then drains only this object's partial roots, never touches the request.
+    bool TrackSubmitted(void* retained_manager,api::EffectReference);
     void Cancel(bool fade=true);
     void Service();
     const EffectRequestStatus& Status() const;

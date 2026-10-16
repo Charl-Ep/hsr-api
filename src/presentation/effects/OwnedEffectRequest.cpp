@@ -28,6 +28,9 @@ struct OwnedEffectRequest::State {
     void* manager=nullptr;
     bool busy=false,fade=true,release_attempted=false,source_observed=false;
     std::uint64_t removed_at_loaded=0;
+    bool tracked=false,receipt_retained=false;
+    void* last_observed_instance=nullptr; // identity comparison only, never dereferenced
+    std::uint64_t observed_loads=0,removed_at_observation=0;
     explicit State(EffectRequestServices value):services(std::move(value)),roots(services.references){}
     void Trace(const std::string& text) const noexcept {
         if(services.trace)try{services.trace(text);}catch(...){}
@@ -70,6 +73,12 @@ struct OwnedEffectRequest::State {
         if(reused || (o.same_generation && o.released.read.returned && o.released.value)) {
             s.request_ended=true;
             s.detail=reused?"official parameter pool advanced; no writes to reused input":"official parameters released";
+        }
+        if(tracked && !s.request_ended && o.same_generation && o.instance.call.returned) {
+            // Official callbacks remain untouched. A newly observed instance
+            // is evidence for retrying a previously unmatched cancellation.
+            if(o.instance.object && o.instance.object!=last_observed_instance)++observed_loads;
+            last_observed_instance=o.instance.object;
         }
     }
     void ReleaseUnsubmitted() {
@@ -145,10 +154,32 @@ void OwnedEffectRequest::Start(void* entity,void* path) {
     s.ReadSignals();
     if(out.request_ended)s.Drain();
 }
+bool OwnedEffectRequest::TrackSubmitted(void* manager,EffectReference reference) {
+    auto& s=*state_;auto& out=s.status;
+    if(out.started)throw std::logic_error("effect request already started");
+    if(!manager || !reference.parameters)throw std::invalid_argument("submitted effect receipt absent");
+    // A cancelled owner must still retain a late receipt and cancel it later.
+    // No callback/configure/observe_request ownership transfer is performed.
+    out.started=true;out.submitted=true;out.reference=reference;s.tracked=true;s.manager=manager;
+    s.busy=true;struct Exit{bool& busy;~Exit(){busy=false;}} exit{s.busy};
+    try {
+        s.Keep(manager);s.Keep(reference.parameters);
+        s.receipt_retained=true;
+        out.detail="tracking official submission; original callbacks retained";
+        s.ObserveEnd();
+        if(out.request_ended)s.Drain();
+    }catch(const std::exception& e) {
+        // Never release or resubmit an input handed off by another producer.
+        // Preserve partial roots and the exact receipt for explicit servicing.
+        out.detail=std::string("submitted receipt tracking unresolved: ")+e.what();
+    }
+    return s.receipt_retained;
+}
 void OwnedEffectRequest::Service() {
     auto& s=*state_;auto& out=s.status;
     if(s.busy || !out.started || out.closed)return;
     s.busy=true;struct Exit{bool& busy;~Exit(){busy=false;}} exit{s.busy};
+    if(s.tracked && !s.receipt_retained){s.Drain();return;}
     s.ReadSignals();
     if(!out.request_ended && out.reference.parameters)s.ObserveEnd();
     if(out.request_ended){s.Drain();return;}
@@ -156,8 +187,9 @@ void OwnedEffectRequest::Service() {
     // Retry only on NEW evidence of a late successful load, not every frame or
     // because Remove returned false. An in-flight completion never adopts the
     // effect into a later action; the same old manager/reference owns removal.
-    if(out.removal_attempts && out.loaded_completions==s.removed_at_loaded)return;
+    if(out.removal_attempts && out.loaded_completions==s.removed_at_loaded && s.observed_loads==s.removed_at_observation)return;
     s.removed_at_loaded=out.loaded_completions;
+    s.removed_at_observation=s.observed_loads;
     ++out.removal_attempts;
     s.Trace("remove begin id="+std::to_string(out.reference.id)+" attempt="+std::to_string(out.removal_attempts));
     out.removal=s.services.access.Remove(s.manager,out.reference,s.fade);

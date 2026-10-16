@@ -85,7 +85,9 @@ When a carrier has no adventure MonoAvatar, the session can use an existing Look
 
 `context.EffectServices()` returns an optional `PresentationEffects` provider. `CreateRequest` constructs an `OwnedEffectRequest`; `RegisterExit` prepares exit-event configuration.
 
-Each request owns its parameters, original manager and completion bridge. Callbacks record signals; the owner frame performs removal. After cancellation, advance `Service` until `Status().closed`. An unmatched removal is retried after a new successful-load callback. A reused parameter-pool generation ends writes through the old request.
+`Start` retains the request's parameters, original manager and completion bridge. Callbacks record signals; the owner frame performs removal. After cancellation, advance `Service` until `Status().closed`. An unmatched removal is retried after a new successful-load callback. A reused parameter-pool generation ends writes through the old request.
+
+For an independently attributed official submission, `TrackSubmitted(manager, reference)` retains the receipt without submitting again or replacing callbacks. It returns false if retention fails; ownership then remains with the caller. Service tracked receipts after the original call returns. A newly observed loaded instance permits another cancellation attempt. This mode does not report official callbacks through the request's completion counters.
 
 `SetProgress(reference, value, seconds)` controls the loaded effect's progress plugin. `SetAnimatorState(reference, hash, duration, restart)` controls its first Animator on layer zero; duration is normalized transition time. Keep the request alive during either call. Neither operation loads a pending effect or searches by name. Results distinguish applied calls, pending loads, ended requests, unsupported components and failures. A fade request does not itself end control; parameter release or reuse does.
 

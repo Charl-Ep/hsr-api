@@ -9,7 +9,9 @@
 
 namespace {
 using namespace hksr::api;
-int info,entity,path,mapped,manager,other_manager,effect;
+int info,entity,path,mapped,manager,other_manager,effect,official_callback,official_completions=0;
+void* fail_keep=nullptr;
+int id_reads=0;
 struct Params {unsigned id=0;bool released=false;int state=0;void* callback=nullptr;void* target=nullptr;};
 Params first,second;Params* acquiring=&first;
 std::map<int,void*> roots;int root_id=0;
@@ -20,7 +22,7 @@ bool sync=false,submit_fault=false,configure_fault=false,remove_match=true,relea
 void* current_manager=&manager;void* last_removed_manager=nullptr;
 void Check(bool value){if(!value)throw std::runtime_error("owned effect request test failed");}
 template<class T>Method M(T entry){return {reinterpret_cast<void*>(entry),&info};}
-int __fastcall Keep(void* object,int,int,void*){roots[++root_id]=object;return root_id;}
+int __fastcall Keep(void* object,int,int,void*){if(object==fail_keep)return 0;roots[++root_id]=object;return root_id;}
 void* __fastcall Target(int id,void*){return roots.at(id);}
 void __fastcall Free(int id,void*){roots.erase(id);}
 void Invoke(Params& value,void* instance,void* parameter_override=nullptr) {
@@ -32,7 +34,7 @@ void Invoke(Params& value,void* instance,void* parameter_override=nullptr) {
 void* __fastcall Map(void* owner,void* name,void*){Check(owner==&entity && name==&path);return &mapped;}
 bool __fastcall Empty(void*,void*){return false;}
 EffectReference __fastcall Acquire(void* name,void*){Check(name==&mapped);return {acquiring->id,0,acquiring};}
-unsigned __fastcall Id(Params* value,void*){if(id_fault)RaiseException(0xE0680002,0,0,nullptr);return value->id;}
+unsigned __fastcall Id(Params* value,void*){++id_reads;if(id_fault)RaiseException(0xE0680002,0,0,nullptr);return value->id;}
 bool __fastcall Released(Params* value,void*){return value->released;}
 int __fastcall State(Params* value,void*){return value->state;}
 void* __fastcall Instance(Params* value,void*){return value->state==3?&effect:nullptr;}
@@ -45,7 +47,7 @@ bool __fastcall Remove(void* service,EffectReference ref,bool,void*) {
     ++removes;last_removed_manager=service;auto& value=*static_cast<Params*>(ref.parameters);
     if(!remove_match || value.id!=ref.id)return false;
     value.state=6;
-    if(release_on_remove){Invoke(value,nullptr);value.released=true;}
+    if(release_on_remove){if(value.callback==&official_callback)++official_completions;else Invoke(value,nullptr);value.released=true;}
     return true;
 }
 void __fastcall Release(Params* value,void*){++releases;value->released=true;}
@@ -61,7 +63,7 @@ EffectRequestServices Services() {
 void Reset() {
     Check(roots.empty());delegates.clear();first={};second={19};acquiring=&first;
     submits=removes=releases=0;sync=submit_fault=configure_fault=release_on_remove=id_fault=false;
-    remove_match=true;current_manager=&manager;last_removed_manager=nullptr;
+    remove_match=true;current_manager=&manager;last_removed_manager=nullptr;fail_keep=nullptr;official_completions=id_reads=0;
 }
 }
 void TestOwnedEffectRequest() {
@@ -153,6 +155,61 @@ void TestOwnedEffectRequest() {
         services.retire_request=[&](EffectReference){retired=true;throw std::runtime_error("retained weak cleanup receipt");};
         OwnedEffectRequest request(services);request.Start(&entity,&path);
         Check(submits==0 && releases==1 && retired && request.Status().closed && roots.empty());
+    }
+    Reset();
+    {
+        auto services=Services();int source_writes=0;
+        services.observe_request=[&](EffectReference,void*){++source_writes;};
+        services.retire_request=[&](EffectReference){++source_writes;};
+        first.callback=&official_callback;first.target=&entity;first.state=1;
+        OwnedEffectRequest request(services);
+        Check(request.TrackSubmitted(&manager,{0,0,&first}));
+        Check(request.Status().submitted && !request.Status().submit.returned && submits==0 && delegates.empty());
+        Check(first.callback==&official_callback && first.target==&entity && source_writes==0);
+        current_manager=&other_manager;request.Cancel();remove_match=false;request.Service();
+        Check(removes==1 && last_removed_manager==&manager && releases==0);
+        request.Service();Check(removes==1);
+        first.state=3;remove_match=true;release_on_remove=true;request.Service();
+        Check(removes==2 && official_completions==1 && source_writes==0);
+        Check(request.Status().closed && request.Status().completions==0 && roots.empty());
+    }
+    Reset();
+    {
+        first.callback=&official_callback;first.state=3;
+        OwnedEffectRequest request(Services());request.Cancel(false);
+        Check(request.TrackSubmitted(&manager,{0,0,&first}) && removes==0);
+        // Tracking never cancels inside the producer's completion stack.
+        release_on_remove=true;request.Service();
+        Check(removes==1 && request.Status().closed && official_completions==1 && submits==0 && releases==0 && roots.empty());
+    }
+    Reset();
+    {
+        first.callback=&official_callback;first.state=3;
+        OwnedEffectRequest request(Services());Check(request.TrackSubmitted(&manager,{0,0,&first}));
+        ++first.id;request.Cancel();request.Service();
+        Check(request.Status().closed && removes==0 && releases==0 && first.callback==&official_callback && roots.empty());
+    }
+    Reset();
+    {
+        first.released=true;OwnedEffectRequest request(Services());
+        Check(request.TrackSubmitted(&manager,{0,0,&first}) && request.Status().closed && roots.empty());
+        Check(submits==0 && removes==0 && releases==0);
+    }
+    Reset();
+    {
+        fail_keep=&first;OwnedEffectRequest request(Services());
+        Check(!request.TrackSubmitted(&manager,{0,0,&first}) && id_reads==0);
+        // The failed capture cannot dereference an unretained request later.
+        request.Cancel();request.Service();
+        Check(request.Status().closed && !request.Status().request_ended && id_reads==0 && removes==0 && releases==0 && roots.empty());
+    }
+    Reset();
+    {
+        first.callback=&official_callback;first.state=1;
+        OwnedEffectRequest request(Services());id_fault=true;
+        Check(request.TrackSubmitted(&manager,{0,0,&first}) && !request.Status().closed);
+        id_fault=false;first.released=true;request.Service();
+        Check(request.Status().closed && removes==0 && releases==0 && roots.empty());
     }
     Reset();
     std::cout<<"Owned effects: synchronous/late callbacks, original manager, pool reuse, partial writes/submission, cancellation and two-request isolation passed; no game acceptance.\n";
