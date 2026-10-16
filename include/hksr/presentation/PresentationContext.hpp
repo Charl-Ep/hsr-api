@@ -34,6 +34,7 @@ class AnimationEventPolicy;
 class AnimationEventConstruction;
 struct AnimationEventSource;
 struct AnimationTaskConstruction;
+struct AnimationEventDefinitions;
 class AnimationSequenceExecutions;
 struct AnimationSequenceObservation;
 class PresentationResources;
@@ -139,6 +140,7 @@ public:
         std::function<void(const AnimationEventSource&,bool)> after) const;
     std::unique_ptr<AnimationSequenceExecutions> CreateSequenceObserver(
         std::function<void(const AnimationSequenceObservation&)>) const;
+    AnimationEventDefinitions ReadEventDefinitions(const AnimationEventSource&) const;
     void Activate();
     void Collect();
     // Call only after owned requests, registrations and entities are closed.

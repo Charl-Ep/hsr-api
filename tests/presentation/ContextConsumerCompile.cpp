@@ -14,6 +14,7 @@
 #include <hksr/world/WorldPlacement.hpp>
 #include <hksr/presentation/events/AnimationEventPolicy.hpp>
 #include <hksr/presentation/events/AnimationEventConstruction.hpp>
+#include <hksr/presentation/events/AnimationEventDefinitions.hpp>
 #include <hksr/presentation/effects/PresentationEffects.hpp>
 #include <hksr/presentation/effects/EffectSubmissions.hpp>
 #include <hksr/runtime/RuntimeHost.hpp>
@@ -32,7 +33,9 @@ public:
         policy_=context_->CreateAnimationPolicy({});
         effects_=context_->CreateEffectObserver([](const auto&){},[](const auto&,bool){});
         sequences_=context_->CreateSequenceObserver([](const auto&){});
-        event_sources_=context_->CreateEventConstructionObserver([](const auto&){},
+        event_sources_=context_->CreateEventConstructionObserver([this](const auto& source){
+                const auto definitions=context_->ReadEventDefinitions(source);(void)definitions;
+            },
             [this](const auto& source,const auto& tasks){sequences_->Track(source,tasks);},[](const auto&,bool){});
     }
     std::unique_ptr<hksr::api::ActorControlSession> Controls(hksr::api::EntityToken owner,hksr::api::GameWorld* world) {

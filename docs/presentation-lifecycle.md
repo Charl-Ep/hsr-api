@@ -115,3 +115,9 @@ Create an effect observer during preparation, then call its `ActivateOnCurrentTh
 `SetProgress(reference, value, seconds)` controls the loaded effect's progress plugin. `SetAnimatorState(reference, hash, duration, restart)` controls its first Animator on layer zero; duration is normalized transition time. Keep the request alive during either call. Neither operation loads a pending effect or searches by name. Results distinguish applied calls, pending loads, ended requests, unsupported components and failures. A fade request does not itself end control; parameter release or reuse does.
 
 See [animation inputs](animation.md) and the [C++ ownership contract](cpp-interface.md).
+
+## Event definition selection
+
+During the construction observer's `before` callback, `context.ReadEventDefinitions(source)` reads the final time-point, group-enter, group-exit and behavior task collections. Rows contain copied names and borrowed collection references; issues are reported per row. Logic entries have no task collection and are not included.
+
+Match a row's `configurations` against the actual task-builder receipt inside the same construction scope. Do not pair configuration and executor arrays by index: disabled or unconstructed tasks may be absent from the result. The reader neither loads another config file nor starts any task. Retain managed references explicitly if they must outlive the construction callback scope.

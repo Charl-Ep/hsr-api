@@ -22,6 +22,7 @@
 #include <hksr/presentation/events/AnimationEventPolicy.hpp>
 #include <hksr/presentation/events/AnimationEventConstruction.hpp>
 #include <hksr/presentation/events/AnimationSequenceExecutions.hpp>
+#include <hksr/presentation/events/AnimationEventDefinitions.hpp>
 #include <hksr/presentation/events/NpcEventSupplement.hpp>
 #include <hksr/presentation/events/NpcEventBindings.hpp>
 #include <hksr/control/ActorControlSession.hpp>
@@ -344,6 +345,11 @@ std::unique_ptr<AnimationEventConstruction> PresentationContext::CreateEventCons
 }
 PresentationContext::PlayerResolver PresentationContext::Player() const {
     return [s=storage_->state](const WorldFrame& frame){return s->placement.PlayerEntity(frame);};
+}
+AnimationEventDefinitions PresentationContext::ReadEventDefinitions(const AnimationEventSource& source) const {
+    const auto s=storage_->state;
+    if(!s->metadata)throw std::logic_error("event definitions require prepared metadata");
+    return ReadAnimationEventDefinitions(source,*s->metadata,s->bindings.references,s->resources.Arrays(),s->resources.Components());
 }
 std::unique_ptr<AnimationSequenceExecutions> PresentationContext::CreateSequenceObserver(
     std::function<void(const AnimationSequenceObservation&)> observe) const {
