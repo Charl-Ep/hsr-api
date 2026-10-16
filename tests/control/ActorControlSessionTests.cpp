@@ -21,6 +21,7 @@ BattleLook battle_look,old_look,new_look;
 Node changed_head;
 std::vector<BattleLook*> battle_looks;
 bool owner_mono_absent=false;
+bool root_available=true;
 Node* current_head=nullptr;
 unsigned enumerations=0,ik_follows=0,ik_stops=0;
 bool fade_pending=false;
@@ -40,7 +41,7 @@ void __fastcall Free(int id,void*){++free_calls;if(fail_free)RaiseException(0xE0
 api::GameWorld* __fastcall World(void*,void*){return reinterpret_cast<api::GameWorld*>(&world);}
 bool __fastcall Loaded(void*,void*){return true;}
 void* __fastcall Component(void* value,void* type,void*){++component_calls;Check(type==&controller_type || type==&driver_type || type==&model_type);return value;}
-void* __fastcall GameObject(Actor* value,void*){return &value->root;}
+void* __fastcall GameObject(Actor* value,void*){return root_available?&value->root:nullptr;}
 void* __fastcall Transform(void* value,void*){return value;}
 void __fastcall Position(Node* value,api::Position3* out,void*){*out=value->p;}
 void __fastcall Rotation(Node* value,api::Rotation4* out,void*){*out=value->q;}
@@ -122,6 +123,13 @@ void TestActorControlSession() {
     Check(controls.PlannedPlacement(fallback).position.x==5 && controls.PlannedPlacement(fallback).position.z==9);
     const auto absolute=controls.Place({10,20,30},{0,0,0,1},false);
     Check(controls.PlannedPlacement().ready && controls.PlannedPlacement().position.x==10);
+    root_available=false;
+    controls.Service(frame,services,nullptr,false);
+    Check(controls.Status().placement_pending && absolute->phase!=api::ControlPhase::Failed && places==0);
+    Check(controls.PlannedPlacement(fallback).position.x==10);
+    root_available=true;
+    controls.Service(frame,services,nullptr,false);
+    Check(controls.Status().placement_pending && places==0);
     controls.Service(frame,services,nullptr,true);
     Check(replaced->phase==api::ControlPhase::Superseded && absolute->phase==api::ControlPhase::Running);
     Check(places==0 && controls.Status().placement_pending);
@@ -280,6 +288,7 @@ void TestActorControlSession() {
         Check(first->phase==api::ControlPhase::Superseded && second->phase==api::ControlPhase::Running);
         fail_place=true;Flush(&actor,&info);fail_place=false;session.Service(frame,services,nullptr,true);
         Check(second->phase==api::ControlPhase::Failed && !second->detail.empty());
+        Check(session.PlannedPlacement(fallback).position.x==fallback.position.x);
         const auto third=session.Place({7,8,9},{0,0,0,1},false);session.Service(frame,services,nullptr,true);
         Flush(&actor,&info);
         const auto delta=session.Place({1,0,0},{0,0,0,1},true);

@@ -120,7 +120,7 @@ void ActorControlSession::State::CollectPlacement() {
     write_.reset();write_results_.clear();status_.placement_pending=!pending_.empty();
 }
 PlayerPlacement ActorControlSession::State::PlannedPlacement(PlayerPlacement fallback) const {
-    auto out=status_.live.ready?status_.live:fallback;
+    auto out=status_.live.ready && status_.placement!=PlacementPhase::Failed?status_.live:fallback;
     if(write_ && !write_->cancelled && (!write_->completed || write_->call.returned)) {
         out.position=write_->position;out.rotation=write_->rotation;out.ready=true;
     }
@@ -261,6 +261,14 @@ void ActorControlSession::State::Service(const WorldFrame& frame,ActorControlSer
     if(!entity.owner_world.read.returned || entity.owner_world.value!=world_ || !entity.loaded.read.returned || !entity.loaded.value)return;
     CollectPlacement();
     status_.live=placement_.ReadEntity(owner_.entity);
+    if(!ready)status_.live.ready=false;
+    // Entity readiness can precede its Unity root during async loading. Keep
+    // the queued pose until that real dependency exists; do not consume it as
+    // a failed write or publish the model's temporary origin as saved intent.
+    if(!status_.live.ready && !pending_.empty()) {
+        status_.placement=PlacementPhase::Waiting;status_.placement_pending=true;
+        status_.placement_error.clear();return;
+    }
     std::vector<Pose> batch;batch.swap(pending_);
     try {
         EnsureActive();
