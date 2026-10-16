@@ -18,6 +18,7 @@ Call `PresentationContext::Create(metadata, capabilities, policy, trace)` from `
 | `EffectServices()`, `Outfits()` | Optional effect and outfit services |
 | `CreateEffectObserver(before, after)` | Observer for official effect submissions from this client's entities |
 | `CreateEventConstructionObserver(before, tasks, after)` | Final animation-event inputs and task-list construction for this client's entities |
+| `CreateSequenceObserver(observe)` | Execution scopes for explicitly tracked event sequences |
 | `CreateRoots()` | Independent GC-root collection |
 | `ReadMap()`, `ReadPlayerPlacement()` | Frame-local observations |
 | `ReadAnimator()`, `NpcMotionComponent()` | Current borrowed model/controller or FreeStyle component |
@@ -63,6 +64,10 @@ A nested factory can receive a different context. Its enclosing construction ide
 
 References are retained for their callback scope only. Retain anything needed afterwards. `Stop` detaches observations without removing game events; call it before releasing callback targets.
 
+`CreateSequenceObserver` connects those definitions to execution. Activate it on the owner thread and pass selected `tasks` receipts to `Track(source, tasks)`. Definitions use weak handles; they do not retain game sequences. `Collect` releases collected definitions. `Stop` detaches callbacks; `Close` also releases handles on the owning thread.
+
+Each observed `Begin` receives a new execution serial. Persistent `Tick` retains that serial, while immediate sequences execute within `Begin`. Notifications include the operation, original return status, observed task state and `continues`. Reset, disposal, terminal return or exception ends the execution. Missing starts are not reconstructed from a later tick. Only tracked definitions and qualified entity generations propagate provenance; direct helper calls outside these entries are not covered.
+
 ## Model capture and transitions
 
 `context.Baselines()(entity, world, profile)` captures the original model/event inputs and prepares a `ModelProfileRequest`. Keep overlays disabled during capture. Advance `Service`; when ready, transfer the request with `TakeRequest` and close the capture separately. Cancellation stops preparation without destroying the entity.
@@ -104,6 +109,8 @@ For an independently attributed official submission, `TrackSubmitted(manager, re
 Create an effect observer during preparation, then call its `ActivateOnCurrentThread` on the owner frame. `before` receives the retained manager, request generation and entity provenance before the official call. Synchronous and asynchronous forwarding of the same request is reported once. `after` reports normal return or exception, not loading success. Stop the observer on the owner thread before releasing its callback targets.
 
 `EffectSubmission::trigger` identifies a qualified `TriggerEffect.OnTaskBegin` invocation and its task, configuration and context. It is empty for direct or unattributed calls; its serial is not an animation-state or event-group ID. Retain needed references during the callbacks. Preserve official callbacks and defer cancellation servicing until the producing engine stack has returned.
+
+`EffectSubmission::sequence` links that trigger to an enclosing tracked sequence execution from the same entity generation. It includes the construction and definition serials. Untracked sequences, direct submissions and callbacks inside submission processing do not inherit an outer execution. Sequence completion does not imply that its asynchronous effects have finished.
 
 `SetProgress(reference, value, seconds)` controls the loaded effect's progress plugin. `SetAnimatorState(reference, hash, duration, restart)` controls its first Animator on layer zero; duration is normalized transition time. Keep the request alive during either call. Neither operation loads a pending effect or searches by name. Results distinguish applied calls, pending loads, ended requests, unsupported components and failures. A fade request does not itself end control; parameter release or reuse does.
 

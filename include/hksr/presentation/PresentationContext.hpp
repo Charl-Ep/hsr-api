@@ -34,6 +34,8 @@ class AnimationEventPolicy;
 class AnimationEventConstruction;
 struct AnimationEventSource;
 struct AnimationTaskConstruction;
+class AnimationSequenceExecutions;
+struct AnimationSequenceObservation;
 class PresentationResources;
 class ModelBaselineCapture;
 class ModelProfileRequest;
@@ -135,6 +137,8 @@ public:
         std::function<void(const AnimationEventSource&)> before,
         std::function<void(const AnimationEventSource&,const AnimationTaskConstruction&)> tasks,
         std::function<void(const AnimationEventSource&,bool)> after) const;
+    std::unique_ptr<AnimationSequenceExecutions> CreateSequenceObserver(
+        std::function<void(const AnimationSequenceObservation&)>) const;
     void Activate();
     void Collect();
     // Call only after owned requests, registrations and entities are closed.

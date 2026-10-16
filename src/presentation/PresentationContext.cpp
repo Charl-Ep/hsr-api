@@ -21,6 +21,7 @@
 #include <hksr/presentation/events/AnimationExitConfig.hpp>
 #include <hksr/presentation/events/AnimationEventPolicy.hpp>
 #include <hksr/presentation/events/AnimationEventConstruction.hpp>
+#include <hksr/presentation/events/AnimationSequenceExecutions.hpp>
 #include <hksr/presentation/events/NpcEventSupplement.hpp>
 #include <hksr/presentation/events/NpcEventBindings.hpp>
 #include <hksr/control/ActorControlSession.hpp>
@@ -343,6 +344,14 @@ std::unique_ptr<AnimationEventConstruction> PresentationContext::CreateEventCons
 }
 PresentationContext::PlayerResolver PresentationContext::Player() const {
     return [s=storage_->state](const WorldFrame& frame){return s->placement.PlayerEntity(frame);};
+}
+std::unique_ptr<AnimationSequenceExecutions> PresentationContext::CreateSequenceObserver(
+    std::function<void(const AnimationSequenceObservation&)> observe) const {
+    const auto s=storage_->state;
+    if(!s->metadata || !s->isolation)throw std::logic_error("sequence observation requires a prepared isolation context");
+    return std::make_unique<AnimationSequenceExecutions>(*s->metadata,*s->metadata,s->bindings.references,
+        [s](const char* ns,const char* type){return s->metadata->ReadFields(ns,type);},
+        [s](GameEntity* entity){return s->isolation->Source(entity);},std::move(observe),s->trace);
 }
 std::unique_ptr<AnimationEventPolicy> PresentationContext::CreateAnimationPolicy(AnimationTaskPolicy policy) const {
     const auto s=storage_->state;

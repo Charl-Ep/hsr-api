@@ -3,6 +3,7 @@
 #include <hksr/native/Invocation.hpp>
 #include <hksr/native/MetadataReader.hpp>
 #include "../../platform/NativeHooks.hpp"
+#include "../events/AnimationExecutionScope.hpp"
 #include <Windows.h>
 #include <algorithm>
 #include <array>
@@ -28,7 +29,7 @@ template<class T>T Read(void* object,std::size_t offset) {
         throw std::runtime_error("effect submission input unreadable");
     return out;
 }
-struct TriggerFrame {void* object;std::uint64_t serial;};
+struct TriggerFrame {void* object;std::uint64_t serial;void* sequence_scope;};
 thread_local TriggerFrame* current_trigger=nullptr;
 struct SubmitFrame {
     SubmitFrame* previous;
@@ -114,15 +115,18 @@ struct EffectSubmissions::State {
                 if(!origin.token.entity){Release(call);continue;}
                 if(origin.token.entity!=entity || !origin.token.generation || !origin.world)
                     throw std::runtime_error("submission source generation disagrees");
-                call->submission={serial,origin,frame.manager,{frame.id,0,frame.request},kind,{}};
+                call->submission={serial,origin,frame.manager,{frame.id,0,frame.request},kind,{},{}};
                 if(trigger) {
                     call->Keep(trigger->object);
                     auto* config=Read<void*>(trigger->object,client->config_offset);
                     auto* context=Read<void*>(trigger->object,client->context_offset);
                     call->Keep(config);call->Keep(context);
                     GameEntity* task_caster=nullptr;
-                    if(config && context && native::Call(client->caster,&task_caster,context).returned && task_caster==entity)
+                    if(config && context && native::Call(client->caster,&task_caster,context).returned && task_caster==entity) {
                         call->submission.trigger={trigger->serial,trigger->object,config,context};
+                        call->submission.sequence=detail::SequenceFromScope(trigger->sequence_scope,origin);
+                        call->Keep(call->submission.sequence.sequence);call->Keep(call->submission.sequence.context);
+                    }
                     else client->Log("TriggerEffect caller source unresolved; receipt has no trigger attribution");
                 }
                 if(Read<std::uint32_t>(frame.request,client->id_offset)!=frame.id ||
@@ -150,7 +154,7 @@ struct EffectSubmissions::State {
         }
     }
     static void __fastcall Trigger(void* object,void* metadata) {
-        TriggerFrame frame{object,++next_trigger};auto* previous=current_trigger;current_trigger=&frame;
+        TriggerFrame frame{object,++next_trigger,detail::CurrentAnimationExecutionScope()};auto* previous=current_trigger;current_trigger=&frame;
         __try{reinterpret_cast<void(__fastcall*)(void*,void*)>(Route().hooks.Original(2))(object,metadata);}
         __finally{current_trigger=previous;}
     }
@@ -158,21 +162,23 @@ struct EffectSubmissions::State {
         const auto incoming_error=GetLastError();
         SubmitFrame frame{current_submit,manager,request};current_submit=&frame;
         auto* trigger=current_trigger;current_trigger=nullptr;
+        auto* sequence=detail::ExchangeAnimationExecutionScope(nullptr);
         auto* batch=Enter(frame,trigger,EffectSubmissionKind::Asynchronous);
         SetLastError(incoming_error);
         __try{reinterpret_cast<void(__fastcall*)(void*,void*,void*)>(Route().hooks.Original(0))(manager,request,metadata);}
         __finally{const auto outgoing_error=GetLastError();Leave(batch,AbnormalTermination()==FALSE);
-            current_submit=frame.previous;current_trigger=trigger;SetLastError(outgoing_error);}
+            current_submit=frame.previous;current_trigger=trigger;detail::ExchangeAnimationExecutionScope(sequence);SetLastError(outgoing_error);}
     }
     static void* __fastcall Sync(void* manager,void* request,void* metadata) {
         const auto incoming_error=GetLastError();
         SubmitFrame frame{current_submit,manager,request};current_submit=&frame;
         auto* trigger=current_trigger;current_trigger=nullptr;
+        auto* sequence=detail::ExchangeAnimationExecutionScope(nullptr);
         auto* batch=Enter(frame,trigger,EffectSubmissionKind::Synchronous);void* result=nullptr;
         SetLastError(incoming_error);
         __try{result=reinterpret_cast<void*(__fastcall*)(void*,void*,void*)>(Route().hooks.Original(1))(manager,request,metadata);}
         __finally{const auto outgoing_error=GetLastError();Leave(batch,AbnormalTermination()==FALSE);
-            current_submit=frame.previous;current_trigger=trigger;SetLastError(outgoing_error);}
+            current_submit=frame.previous;current_trigger=trigger;detail::ExchangeAnimationExecutionScope(sequence);SetLastError(outgoing_error);}
         return result;
     }
 };

@@ -2,6 +2,7 @@
 #include "EffectAccess.hpp"
 #include "../../entity/EntityLifecycle.hpp"
 #include "../../metadata/RuntimeMetadata.hpp"
+#include "../events/AnimationSequenceExecutions.hpp"
 #include <functional>
 
 namespace hksr::sdk_v1 {
@@ -22,6 +23,9 @@ struct EffectSubmission {
     EffectReference request;
     EffectSubmissionKind kind=EffectSubmissionKind::Asynchronous;
     EffectTriggerExecution trigger;
+    // Qualified event-sequence invocation enclosing the trigger. Empty for
+    // untracked/direct submissions. Independent of asynchronous completion.
+    AnimationSequenceExecution sequence;
 };
 // Observe official submissions without changing parameters, callbacks, return
 // values or exceptions. Install before creation and activate on the engine
