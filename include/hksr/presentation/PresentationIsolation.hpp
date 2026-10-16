@@ -16,6 +16,9 @@ public:
     PresentationIsolation& operator=(const PresentationIsolation&)=delete;
     HKSR_API void ActivateOnCurrentThread();
     HKSR_API void RememberBirth(EntityOrigin);
+    // Caller holds the entity alive. Empty for public or other-client sources.
+    // Historical creation provenance, not permission to mutate a retired actor.
+    HKSR_API EntityOrigin Source(GameEntity*) const;
     HKSR_API void RememberRequest(EffectReference,GameEntity*);
     HKSR_API void RetireRequest(EffectReference);
     // Shared service collection is coalesced per official runtime delivery.

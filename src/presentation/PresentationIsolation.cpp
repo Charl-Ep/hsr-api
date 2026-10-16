@@ -138,6 +138,12 @@ void PresentationIsolation::RememberRequest(EffectReference ref,GameEntity* owne
     try{service.clients.RequireOwner(state_->client,service.sources.Identify(owner));state_->requests[ref.parameters]=ref.id;service.sources.RememberRequest(ref,owner);}
     catch(const std::exception& e){service.Log(std::string("explicit effect attribution unresolved; submission continues: ")+e.what());}
 }
+EntityOrigin PresentationIsolation::Source(GameEntity* entity) const {
+    if(!state_ || !entity)return {};
+    auto& service=*state_->service;service.CheckThread();
+    const auto origin=service.sources.Identify(entity);
+    return service.clients.Owns(state_->client,origin)?origin:EntityOrigin{};
+}
 void PresentationIsolation::RetireRequest(EffectReference ref){
     if(!state_)throw std::logic_error("presentation client retired");state_->service->CheckThread();
     const auto i=state_->requests.find(ref.parameters);

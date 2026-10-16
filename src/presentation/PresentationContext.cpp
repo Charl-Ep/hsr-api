@@ -17,6 +17,7 @@
 #include <hksr/animation/ControllerBinding.hpp>
 #include <hksr/presentation/effects/OwnedEffectRequest.hpp>
 #include <hksr/presentation/effects/PresentationEffects.hpp>
+#include <hksr/presentation/effects/EffectSubmissions.hpp>
 #include <hksr/presentation/events/AnimationExitConfig.hpp>
 #include <hksr/presentation/events/AnimationEventPolicy.hpp>
 #include <hksr/presentation/events/NpcEventSupplement.hpp>
@@ -314,6 +315,15 @@ std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices()
     return std::make_shared<PresentationEffects>(std::move(*services),std::move(control));
 }
 PresentationIsolationStatus PresentationContext::IsolationStatus() const{return storage_->state->isolation_status;}
+std::unique_ptr<EffectSubmissions> PresentationContext::CreateEffectObserver(
+    std::function<void(const EffectSubmission&)> before,
+    std::function<void(const EffectSubmission&,bool)> after) const {
+    const auto s=storage_->state;
+    if(!s->metadata || !s->isolation)throw std::logic_error("effect observation requires a prepared isolation context");
+    return std::make_unique<EffectSubmissions>(*s->metadata,s->bindings.references,
+        [s](const char* ns,const char* type){return s->metadata->ReadFields(ns,type);},
+        [s](GameEntity* entity){return s->isolation->Source(entity);},std::move(before),std::move(after),s->trace);
+}
 PresentationContext::ControlFactory PresentationContext::Controls() const {
     return [s=storage_->state](EntityToken entity,GameWorld* world) {
         const auto& b=s->bindings;

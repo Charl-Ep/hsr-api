@@ -14,6 +14,7 @@
 #include <hksr/world/WorldPlacement.hpp>
 #include <hksr/presentation/events/AnimationEventPolicy.hpp>
 #include <hksr/presentation/effects/PresentationEffects.hpp>
+#include <hksr/presentation/effects/EffectSubmissions.hpp>
 #include <hksr/runtime/RuntimeHost.hpp>
 
 // Compile-only ordinary consumer. It does not know the binding table or any
@@ -21,10 +22,12 @@
 class ContextConsumer final:public hksr::api::RuntimeClient {
     std::unique_ptr<hksr::api::PresentationContext> context_;
     std::unique_ptr<hksr::api::AnimationEventPolicy> policy_;
+    std::unique_ptr<hksr::api::EffectSubmissions> effects_;
 public:
     void Prepare(hksr::api::RuntimeMetadata& metadata,hksr::api::RuntimeCapabilities capabilities) override {
         context_=hksr::api::PresentationContext::Create(metadata,capabilities,{});
         policy_=context_->CreateAnimationPolicy({});
+        effects_=context_->CreateEffectObserver([](const auto&){},[](const auto&,bool){});
     }
     std::unique_ptr<hksr::api::ActorControlSession> Controls(hksr::api::EntityToken owner,hksr::api::GameWorld* world) {
         return context_->Controls()(owner,world);
@@ -63,7 +66,8 @@ public:
     }
     bool Frame(const hksr::api::WorldFrame&,bool stop) override {
         context_->Activate();
-        if(stop)return context_->Close();
+        if(stop){effects_->Stop();return context_->Close();}
+        effects_->ActivateOnCurrentThread();
         context_->Collect();return false;
     }
 };

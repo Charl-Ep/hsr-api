@@ -16,6 +16,7 @@ Call `PresentationContext::Create(metadata, capabilities, policy, trace)` from `
 | `Baselines()`, `ModelTransitions()` | Model capture and transition factories |
 | `Controls()`, `Player()` | Control-session factory and current-player resolver |
 | `EffectServices()`, `Outfits()` | Optional effect and outfit services |
+| `CreateEffectObserver(before, after)` | Observer for official effect submissions from this client's entities |
 | `CreateRoots()` | Independent GC-root collection |
 | `ReadMap()`, `ReadPlayerPlacement()` | Frame-local observations |
 | `ReadAnimator()`, `NpcMotionComponent()` | Current borrowed model/controller or FreeStyle component |
@@ -88,6 +89,10 @@ When a carrier has no adventure MonoAvatar, the session can use an existing Look
 `Start` retains the request's parameters, original manager and completion bridge. Callbacks record signals; the owner frame performs removal. After cancellation, advance `Service` until `Status().closed`. An unmatched removal is retried after a new successful-load callback. A reused parameter-pool generation ends writes through the old request.
 
 For an independently attributed official submission, `TrackSubmitted(manager, reference)` retains the receipt without submitting again or replacing callbacks. It returns false if retention fails; ownership then remains with the caller. Service tracked receipts after the original call returns. A newly observed loaded instance permits another cancellation attempt. This mode does not report official callbacks through the request's completion counters.
+
+Create an effect observer during preparation, then call its `ActivateOnCurrentThread` on the owner frame. `before` receives the retained manager, request generation and entity provenance before the official call. Synchronous and asynchronous forwarding of the same request is reported once. `after` reports normal return or exception, not loading success. Stop the observer on the owner thread before releasing its callback targets.
+
+`EffectSubmission::trigger` identifies a qualified `TriggerEffect.OnTaskBegin` invocation and its task, configuration and context. It is empty for direct or unattributed calls; its serial is not an animation-state or event-group ID. Retain needed references during the callbacks. Preserve official callbacks and defer cancellation servicing until the producing engine stack has returned.
 
 `SetProgress(reference, value, seconds)` controls the loaded effect's progress plugin. `SetAnimatorState(reference, hash, duration, restart)` controls its first Animator on layer zero; duration is normalized transition time. Keep the request alive during either call. Neither operation loads a pending effect or searches by name. Results distinguish applied calls, pending loads, ended requests, unsupported components and failures. A fade request does not itself end control; parameter release or reuse does.
 

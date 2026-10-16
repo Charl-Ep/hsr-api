@@ -28,6 +28,8 @@ struct Position3;
 struct Rotation4;
 class NpcEventSupplement;
 class PresentationEffects;
+class EffectSubmissions;
+struct EffectSubmission;
 class AnimationEventPolicy;
 class PresentationResources;
 class ModelBaselineCapture;
@@ -113,6 +115,12 @@ public:
     ControllerBindingServices Controllers() const;
     std::optional<EffectRequestServices> Effects() const;
     std::shared_ptr<const PresentationEffects> EffectServices() const;
+    // Construct during preparation; activate and stop on the owner thread.
+    // Receives only this client's entity generations, including creation-time
+    // and retained retirement provenance. Callbacks must not service removals.
+    std::unique_ptr<EffectSubmissions> CreateEffectObserver(
+        std::function<void(const EffectSubmission&)> before,
+        std::function<void(const EffectSubmission&,bool)> after) const;
     // Factories retain native context state. Sessions still require Close on
     // their official owner frame before the context itself is closed.
     using ControlFactory=std::function<std::unique_ptr<ActorControlSession>(EntityToken,GameWorld*)>;

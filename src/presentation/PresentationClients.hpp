@@ -65,6 +65,11 @@ public:
         if(!clients_.count(id) || i==sources_.end() || i->second.client!=id)
             throw std::logic_error("presentation request belongs to another client");
     }
+    bool Owns(std::uint64_t id,EntityOrigin origin) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        const auto i=sources_.find(KeyOf(origin));
+        return clients_.count(id) && i!=sources_.end() && i->second.client==id;
+    }
     template<class Alive> void Collect(Alive&& alive) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         for(auto i=sources_.begin();i!=sources_.end();) {
