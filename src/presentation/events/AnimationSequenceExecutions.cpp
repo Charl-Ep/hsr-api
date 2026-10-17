@@ -94,12 +94,24 @@ struct AnimationSequenceExecutions::State {
         if(!weak.Release(id).complete)return false;weak.Forget(id);return true;
     }
     void Retire(std::map<void*,std::shared_ptr<Definition>>::iterator it) {
-        pending.push_back(it->second->weak);it->second->execution=0;definitions.erase(it);
+        const auto definition=it->second;
+        AnimationSequenceObservation ended;
+        ended.operation=AnimationSequenceOperation::DefinitionRetired;
+        ended.execution={definition->construction,definition->id,definition->execution,definition->parent_execution,
+            definition->origin,it->first,nullptr,definition->kind};
+        pending.push_back(definition->weak);definition->execution=0;definitions.erase(it);
+        if(active.load()==GetCurrentThreadId())try{observe(ended);}catch(...){Log("definition retirement callback failed");}
     }
     void Collect() {
-        for(auto it=definitions.begin();it!=definitions.end();) {
-            const auto target=weak.Target(it->second->weak);
-            if(target.call.returned && !target.object){auto gone=it++;Retire(gone);}else ++it;
+        // Retirement notifications may synchronously close or change the
+        // observer. Keep stable identities across callback reentry.
+        const auto snapshot=definitions;
+        for(const auto& [sequence,definition]:snapshot) {
+            auto found=definitions.find(sequence);
+            if(found==definitions.end() || found->second!=definition)continue;
+            const auto target=weak.Target(definition->weak);
+            found=definitions.find(sequence);
+            if(target.call.returned && !target.object && found!=definitions.end() && found->second==definition)Retire(found);
         }
         for(auto it=pending.begin();it!=pending.end();)if(ReleaseWeak(*it))it=pending.erase(it);else ++it;
     }
@@ -130,7 +142,7 @@ struct AnimationSequenceExecutions::State {
                 if(!context || !native::Call(s->caster,&entity,context).returned)throw std::runtime_error("sequence caster unavailable");
                 call->Keep(entity);const auto origin=entity?s->identify(entity):EntityOrigin{};
                 if(!Same(origin,definition->origin)) {
-                    definition->execution=0;Release(call);continue;
+                    s->Retire(found);Release(call);continue;
                 }
                 if(serial){definition->execution=serial;definition->parent_execution=detail::SequenceFromScope(parent,origin).serial;}
                 call->value.execution={definition->construction,definition->id,definition->execution,definition->parent_execution,

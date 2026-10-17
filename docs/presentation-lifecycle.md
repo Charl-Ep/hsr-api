@@ -22,6 +22,7 @@ Call `PresentationContext::Create(metadata, capabilities, policy, trace)` from `
 | `CreateRoots()` | Independent GC-root collection |
 | `ReadMap()`, `ReadPlayerPlacement()` | Frame-local observations |
 | `ReadAnimator()`, `NpcMotionComponent()` | Current borrowed model/controller or FreeStyle component |
+| `ReadEventReceiver(entity, world)` | Current event consumer, or null when unavailable |
 | `CreateCatalog()`, `CreateMouseMode()` | Catalog reader and mouse-mode lease |
 | `BindingErrors()`, `IsolationStatus()` | Preparation diagnostics and isolation state |
 
@@ -64,7 +65,7 @@ A nested factory can receive a different context. Its enclosing construction ide
 
 References are retained for their callback scope only. Retain anything needed afterwards. `Stop` detaches observations without removing game events; call it before releasing callback targets.
 
-`CreateSequenceObserver` connects those definitions to execution. Activate it on the owner thread and pass selected `tasks` receipts to `Track(source, tasks)`. Definitions use weak handles; they do not retain game sequences. `Collect` releases collected definitions. `Stop` detaches callbacks; `Close` also releases handles on the owning thread.
+`CreateSequenceObserver` connects those definitions to execution. Activate it on the owner thread and pass selected `tasks` receipts to `Track(source, tasks)`. Definitions use weak handles; they do not retain game sequences. `Collect` releases collected definitions. Retirement emits `DefinitionRetired` with the former execution identity, allowing consumers to release producer associations even without a game disposal callback. Its pointers are identity tokens only, not readable objects. `Stop` detaches callbacks; `Close` also releases handles on the owning thread.
 
 Each observed `Begin` receives a new execution serial. Persistent `Tick` retains that serial, while immediate sequences execute within `Begin`. Notifications include the operation, original return status, observed task state and `continues`. Reset, disposal, terminal return or exception ends the execution. Missing starts are not reconstructed from a later tick. Only tracked definitions and qualified entity generations propagate provenance; direct helper calls outside these entries are not covered.
 

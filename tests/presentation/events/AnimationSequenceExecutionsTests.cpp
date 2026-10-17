@@ -159,10 +159,18 @@ int main() {
         sequences.Collect();OnlyWeak();
         sequences.Track(Source(),Definition(persistent));++generation;Begin(&persistent,&info);
         Check(!effects.back().sequence.serial,"entity generation reuse inherited execution");--generation;
+        sequences.Track(Source(),Definition(persistent));
         persistent.context=&other_context;Begin(&persistent,&info);Check(!effects.back().sequence.serial,"foreign context attributed");persistent.context=&context;
+        sequences.Track(Source(),Definition(persistent));
         const auto count=observations.size();std::thread other([]{Begin(&persistent,&info);});other.join();Check(observations.size()==count,"foreign thread observed");
         // Simulated GC followed by address reuse cannot revive the old receipt.
+        Begin(&persistent,&info);const auto collected_execution=effects.back().sequence.serial;
+        Check(collected_execution!=0,"collection test requires a running execution");
         for(auto& h:handles)if(h.second.object==&persistent && h.second.kind==0)h.second.object=nullptr;
+        sequences.Collect();
+        Check(observations.back().operation==AnimationSequenceOperation::DefinitionRetired &&
+            observations.back().execution.serial==collected_execution && !observations.back().continues &&
+            !observations.back().original_returned && !observations.back().state_read,"collection did not retire exact producer identity");
         Begin(&persistent,&info);Check(!effects.back().sequence.serial,"collected identity revived by address reuse");
         sequences.Collect();fail_weak=true;Check(sequences.Track(Source(),Definition(persistent))==AnimationSequenceTracking::Unavailable,"weak failure accepted");fail_weak=false;
         sequences.Collect();

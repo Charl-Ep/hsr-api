@@ -98,6 +98,9 @@ public:
     std::unique_ptr<MouseModeLease> CreateMouseMode() const;
     // Nullopt while the model/controller is unavailable or its entity ended.
     std::optional<ActorAnimatorView> ReadAnimator(EntityToken) const;
+    // Current event consumer, not the last observed construction receiver.
+    // Borrowed on the owner thread; null while unavailable or being replaced.
+    void* ReadEventReceiver(EntityToken,GameWorld*) const;
     // Throws when the entity is not loaded in the requested world, has ended,
     // or has no FreeStyle component. The returned component is borrowed.
     void* NpcMotionComponent(EntityToken,GameWorld*) const;

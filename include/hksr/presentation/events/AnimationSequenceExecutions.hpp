@@ -3,7 +3,7 @@
 
 namespace hksr::sdk_v1 {
 enum class AnimationSequenceKind { Persistent, Immediate };
-enum class AnimationSequenceOperation { Begin, Tick, Reset, Dispose };
+enum class AnimationSequenceOperation { Begin, Tick, Reset, Dispose, DefinitionRetired };
 struct AnimationSequenceExecution {
     std::uint64_t construction=0,definition=0,serial=0,parent_serial=0;
     EntityOrigin origin;
@@ -35,7 +35,7 @@ public:
     AnimationSequenceExecutions& operator=(const AnimationSequenceExecutions&)=delete;
     void ActivateOnCurrentThread();
     AnimationSequenceTracking Track(const AnimationEventSource&,const AnimationTaskConstruction&);
-    void Collect(); // release collected definitions, not game objects
+    void Collect(); // collected definitions emit DefinitionRetired, then release weak handles
     void Stop() noexcept; // detach callbacks; does not release managed handles
     bool Close(); // Stop + release weak handles on the owning thread
 private:
@@ -44,4 +44,6 @@ private:
 // References in notifications are borrowed for that call only. A definition
 // does not keep a sequence alive. Missing Begin is never inferred from Tick.
 // Close before the metadata domain ends. Destruction performs no engine calls.
+// DefinitionRetired is a tracking notification, not a game Dispose call. Its
+// pointers are identity tokens only (the sequence may already be collected).
 }

@@ -18,6 +18,8 @@ static_assert(!std::is_copy_constructible_v<PresentationResources>);
 static_assert(!std::is_copy_constructible_v<ActorAnimationSession>);
 static_assert(!std::is_copy_constructible_v<ModelServices>);
 int info,entity_data,world_data,other_world,model_type,style_type,model,style,animator,controller,mesh;
+int events_type,data_type,receiver_a,receiver_b;
+struct EventComponent {int padding=0;void* consumer=&receiver_a;} event_component;
 auto* entity=reinterpret_cast<GameEntity*>(&entity_data);
 auto* world=reinterpret_cast<GameWorld*>(&world_data);
 EntityToken token;
@@ -35,6 +37,7 @@ bool __fastcall Loaded(void* input,void*){Check(input==entity);return loaded;}
 void* __fastcall Component(void* input,void* type,void*) {
     Check(input==entity);++components;if(component_callback)component_callback();
     if(type==&model_type)return &model;
+    if(type==&events_type)return &event_component;
     Check(type==&style_type);return &style;
 }
 void* __fastcall Animator(void* input,void*){Check(input==&model);return &animator;}
@@ -63,6 +66,8 @@ void __fastcall Position(void* input,Position3* output,void*){Check(input==&tran
 void __fastcall Rotation(void* input,Rotation4* output,void*){Check(input==&transform);*output={0,0,0,1};}
 struct Objects final:ManagedObjects {
     ObjectResult ManagedType(const char* ns,const char* name) override {
+        if(std::string(name)=="LGBHONLHNPN"){Check(std::string(ns).empty());return {{true,0},&events_type};}
+        if(std::string(name)=="AdventureCharacterDataComponent")return {{true,0},&data_type};
         Check(std::string(ns)=="RPG.GameCore");++types;if(type_callback)type_callback();
         if(std::string(name)=="CharacterModelComponent")return {{true,0},&model_type};
         Check(std::string(name)=="FreeStyleComponent");return {{true,0},&style_type};
@@ -79,6 +84,7 @@ void Test() {
     b.model.animator=M(Animator);b.model.changing=M(Changing);
     b.profile_inputs.animator_initialized=M(Initialized);b.animation.controller=M(Controller);
     b.mesh.vertex_count=M(Vertices);
+    b.events.has_consumer=true;b.events.consumer_offset=offsetof(EventComponent,consumer);
     PresentationContext context(objects,b);
     Check(types==0 && roots.empty() && mesh_reads==0);
     const auto& resources=context.Resources();
@@ -100,6 +106,13 @@ void Test() {
     loaded=false;Throws([&]{context.NpcMotionComponent(token,world);});loaded=true;Check(types==1);
     Check(context.NpcMotionComponent(token,world)==&style && types==2 && roots.size()==2);
     Check(context.NpcMotionComponent(token,world)==&style && types==2);
+    Check(context.ReadEventReceiver(token,world)==&receiver_a);
+    event_component.consumer=&receiver_b;Check(context.ReadEventReceiver(token,world)==&receiver_b);
+    event_component.consumer=nullptr;Check(!context.ReadEventReceiver(token,world));event_component.consumer=&receiver_a;
+    Check(!context.ReadEventReceiver(token,reinterpret_cast<GameWorld*>(&other_world)));
+    loaded=false;Check(!context.ReadEventReceiver(token,world));loaded=true;
+    component_callback=[]{End();};Check(!context.ReadEventReceiver(token,world));component_callback={};
+    token=TrackedEntities().Track(entity);
     component_callback=[]{End();};const auto initialized_before=initialized_reads;
     Check(!context.ReadAnimator(token) && initialized_reads==initialized_before);component_callback={};
     const auto stale=token;token=TrackedEntities().Track(entity);const auto component_before=components;

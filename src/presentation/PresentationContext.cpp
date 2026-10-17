@@ -189,6 +189,26 @@ std::optional<ActorAnimatorView> PresentationContext::ReadAnimator(EntityToken t
     if(!controller.call.returned || !controller.object || !Alive(token))return {};
     return ActorAnimatorView{component.object,model.animator.value,controller.object};
 }
+void* PresentationContext::ReadEventReceiver(EntityToken token,GameWorld* world) const {
+    auto& s=*storage_->state;
+    if(!world || !Alive(token))return nullptr;
+    const auto entity=s.models->Entities().Read(token.entity);
+    if(!Alive(token) || !entity.owner_world.read.returned || entity.owner_world.value!=world ||
+        !entity.loaded.read.returned || !entity.loaded.value)return nullptr;
+    if(!s.event_type) {
+        const auto type=ResolveAnimationInputTypes(s.objects).events;
+        if(!type.call.returned || !type.object)throw std::runtime_error("event Type unavailable");
+        s.handles.push_back(0);s.handles.back()=s.roots.Keep(type.object);
+        const auto kept=s.roots.Target(s.handles.back());
+        if(!kept.call.returned || !kept.object)throw std::runtime_error("event Type retention failed");
+        s.event_type=kept.object;
+    }
+    if(!Alive(token))return nullptr;
+    const auto component=s.models->Entities().Component(token.entity,s.event_type);
+    if(!Alive(token) || !component.call.returned || !component.object)return nullptr;
+    const auto receiver=AnimationEvents(s.bindings.events).Consumer(component.object);
+    return Alive(token) && receiver.call.returned?receiver.object:nullptr;
+}
 void* PresentationContext::NpcMotionComponent(EntityToken token,GameWorld* world) const {
     auto& s=*storage_->state;
     if(!Alive(token))throw std::runtime_error("selected character is retiring");
