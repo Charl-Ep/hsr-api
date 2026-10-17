@@ -20,6 +20,7 @@ GameWorld* world = reinterpret_cast<GameWorld*>(&world_data);
 auto* manager = reinterpret_cast<EntityManager*>(&manager_data);
 unsigned creations = 0, kills = 0, reads = 0, setter_calls = 0;
 unsigned factory_mode = 0;
+unsigned empty_index=0,partner_calls=0,partner_base_roots=0;
 bool kill_fault = false, getter_fault = false, auto_dispose = true;
 bool cascade = false;
 EntityToken factory_token;
@@ -31,8 +32,8 @@ void Check(bool ok) { if (!ok) throw std::runtime_error("NPC instance test faile
 GameEntity* E(unsigned n = 0) { return reinterpret_cast<GameEntity*>(&objects[n]); }
 template<class F> Method M(F fn) { return {reinterpret_cast<void*>(fn), &metadata}; }
 __declspec(noinline) GameEntity* __fastcall Empty(GameWorld* w, int team, int kind, void* info) {
-    Check(w == world && team == 4 && kind == 4 && info == &metadata);
-    ++creations; return E();
+    Check(w == world && team == 4 && (kind == 4 || kind==15) && info == &metadata);
+    ++creations; return E(empty_index);
 }
 __declspec(noinline) void __fastcall Dispose(GameEntity*, void* info) { Check(info == &metadata); }
 GameEntity* __fastcall Create(EntityManager* m, MapNpcDefinition* definition, NpcDataRow* row,
@@ -62,6 +63,18 @@ GameEntity* __fastcall Story(EntityManager* m,int subtype,void* graph,void* mode
     auto* result=Empty(world,4,4,&metadata);
     if(factory_mode==1)RaiseException(0xE0510004,0,0,nullptr);
     return result;
+}
+GameEntity* __fastcall Partner(EntityManager* m,GameEntity* parent,void* model,void* config,void* info) {
+    Check(m==manager && parent==E() && info==&metadata);
+    Check(*static_cast<std::string*>(model)=="Partner.prefab" && *static_cast<std::string*>(config)=="Partner.json");
+    Check(roots.size()==partner_base_roots+5);
+    ++partner_calls;
+    if(factory_mode==2)return parent;
+    empty_index=1;auto* child=Empty(world,4,15,&metadata);empty_index=0;
+    Check(current_owner->Owns(child) && !unrelated_owner->Owns(child));
+    if(factory_mode==1)RaiseException(0xE0510005,0,0,nullptr);
+    if(factory_mode==3)Dispose(child,&metadata);
+    return child;
 }
 std::uint32_t __fastcall Id(GameEntity* e, void* info) { Check(info == &metadata); ++reads; return reinterpret_cast<FakeEntity*>(e)->id; }
 GameWorld* __fastcall Owner(GameEntity*, void*) { return world; }
@@ -95,7 +108,8 @@ MetadataResolver Resolver() {
             {"MakeEntityDie", "System.Void", {"RPG.GameCore.GameEntity", "RPG.GameCore.GameEntity"}, false, M(Kill)}}},
         {"RPG.GameCore", "EntityManager", {{"GetEntityByRuntimeID", "RPG.GameCore.GameEntity", {"System.UInt32"}, false, M(Lookup)}}},
         {"RPG.GameCore", "EntityManagerExtension", {{"ClientCreateMapNPC", "RPG.GameCore.GameEntity",
-            {"RPG.GameCore.EntityManager", "RPG.Client.MapNpcDef", "RPG.GameCore.NPCDataRow", "System.Action<RPG.GameCore.GameEntity>", "System.Boolean"}, true, M(Create)}}}
+            {"RPG.GameCore.EntityManager", "RPG.Client.MapNpcDef", "RPG.GameCore.NPCDataRow", "System.Action<RPG.GameCore.GameEntity>", "System.Boolean"}, true, M(Create)},
+            {"CreatePartner","RPG.GameCore.GameEntity",{"RPG.GameCore.EntityManager","RPG.GameCore.GameEntity","System.String","System.String"},true,M(Partner)}}}
     });
 }
 }
@@ -269,6 +283,78 @@ void TestNpcCreationSessions() {
         EntityCreationSession pending(owner,{},M(Story),&provider,methods,references);
         objects[0].loaded=false;pending.Create(source);pending.Remove();pending.Service(frame);
         Check(pending.Status().closed && roots.empty());
+    }
+    {
+        struct PartnerObjects:ManagedObjects {
+            std::vector<std::unique_ptr<std::string>> strings;
+            std::function<void()> on_string;
+            ObjectResult NewStringUtf8(const char* text)override {
+                strings.push_back(std::make_unique<std::string>(text));
+                if(on_string)on_string();
+                return {{true,0},strings.back().get()};
+            }
+            ObjectResult AllocateObject(const char*,const char*)override {throw std::runtime_error("partner uses official factory");}
+            ObjectResult ManagedType(const char*,const char*)override {throw std::runtime_error("unexpected partner type lookup");}
+        } provider;
+        current_owner=&owner;unrelated_owner=&unrelated;factory_mode=0;
+        NpcCreationSession parent(owner,factory,methods,references);parent.Create(input);
+        partner_base_roots=static_cast<unsigned>(roots.size());
+        const auto parent_token=owner.OwnedToken(E());
+        PartnerCreateInput source{world,manager,parent_token,"Partner.prefab","Partner.json"};
+        const auto partner_factory=ResolvePartnerFactory(resolver);
+        const auto make=[&](const EntityOwner& client) {
+            return std::make_unique<EntityCreationSession>(client,Method{},Method{},&provider,methods,references,
+                EntityCreationScope::BirthObserver{},partner_factory);
+        };
+        for(unsigned mode=0;mode<4;++mode) {
+            factory_mode=mode;auto child=make(owner);child->Create(source);
+            Check(!child->IsStory());
+            Check(child->Status().create_returned==(mode==0));
+            if(mode==0) {
+                Check(owner.Owns(E(1)) && child->Status().creation.entities.size()==1);
+                objects[1].loaded=false;child->Service(frame);
+                Check(!child->Status().entities[0].observation.loaded.value);
+                child->Remove();
+            }else if(mode==1)Check(child->Status().entities.size()==1 && child->Status().factory.call.exception==0xE0510005);
+            else Check(child->Status().entities.empty());
+            child->Service(frame);
+            Check(child->Status().closed && roots.size()==partner_base_roots && owner.Owns(E()));
+        }
+        factory_mode=0;
+        const auto calls=partner_calls;
+        auto other=make(unrelated);bool rejected=false;
+        try{other->Create(source);}catch(const std::invalid_argument&){rejected=true;}
+        Check(rejected && !other->Status().create_started && partner_calls==calls);
+        auto stale=make(owner);auto invalid=source;++invalid.summoner.generation;rejected=false;
+        try{stale->Create(invalid);}catch(const std::invalid_argument&){rejected=true;}
+        Check(rejected && partner_calls==calls);
+        invalid=source;invalid.world=reinterpret_cast<GameWorld*>(1);rejected=false;
+        try{stale->Create(invalid);}catch(const std::invalid_argument&){rejected=true;}
+        Check(rejected && partner_calls==calls && roots.size()==partner_base_roots);
+
+        // Parent death after creation: a missing native cascade still leaves
+        // explicit retirement responsibility with the child's session.
+        auto child=make(owner);child->Create(source);
+        Dispose(E(),&metadata);child->Service(frame);
+        Check(child->Status().closed && !owner.Owns(E(1)));
+        parent.Service(frame);Check(parent.Status().closed && roots.empty());
+
+        NpcCreationSession cascading_parent(owner,factory,methods,references);cascading_parent.Create(input);
+        source.summoner=owner.OwnedToken(E());partner_base_roots=static_cast<unsigned>(roots.size());
+        auto cascading_child=make(owner);cascading_child->Create(source);
+        const auto prior_kills=kills;cascade=true;cascading_parent.Remove();cascading_parent.Service(frame);cascade=false;
+        auto absent_world=frame;absent_world.world=reinterpret_cast<GameWorld*>(1);
+        cascading_child->Service(absent_world);
+        Check(cascading_child->Status().closed && roots.empty() && kills==prior_kills+1);
+
+        // Parent death during managed string preparation never calls factory.
+        NpcCreationSession next_parent(owner,factory,methods,references);next_parent.Create(input);
+        source.summoner=owner.OwnedToken(E());partner_base_roots=static_cast<unsigned>(roots.size());
+        const auto before=partner_calls;
+        provider.on_string=[&]{Dispose(E(),&metadata);};
+        auto interrupted=make(owner);interrupted->Create(source);
+        Check(!interrupted->Status().create_returned && interrupted->Status().closed && partner_calls==before);
+        provider.on_string={};next_parent.Service(frame);Check(roots.empty());
     }
     RemoveEntityLifecycleHooksAtQuiescentPoint();
     std::cout << "NPC creation/loading/removal/natural-exit/rebuild tests passed through SDK and local lifecycle hooks; no game acceptance.\n";

@@ -14,6 +14,7 @@ struct EntityCreationSession::State {
     EntityOwner owner;
     EntityFactory factory;
     Method story_factory;
+    Method partner_factory;
     ManagedObjects* objects;
     bool story=false;
     bool constructing=false;
@@ -27,9 +28,15 @@ struct EntityCreationSession::State {
     NpcCreationStatus status;
     std::vector<ManagedRootId> handles;
     GameWorld* world = nullptr;
+    EntityToken summoner;
     EntityCreationScope::BirthObserver observe_birth;
-    State(const EntityOwner& client,Method create,Method story_method,ManagedObjects* managed,EntityAccessMethods methods,ReferenceMethods references,EntityCreationScope::BirthObserver observer)
-        :owner(client),factory(create),story_factory(story_method),objects(managed),references(references),access(std::move(methods)),roots(references),observe_birth(std::move(observer)) {}
+    State(const EntityOwner& client,Method create,Method story_method,ManagedObjects* managed,EntityAccessMethods methods,ReferenceMethods references,EntityCreationScope::BirthObserver observer,Method partner)
+        :owner(client),factory(create),story_factory(story_method),partner_factory(partner),objects(managed),references(references),access(std::move(methods)),roots(references),observe_birth(std::move(observer)) {}
+    bool SummonerLive(EntityToken token) const {
+        const auto owned=owner.OwnedToken(token.entity);
+        return token.entity && token.generation && owned.generation==token.generation &&
+            !TrackedEntities().IsRetiring(token);
+    }
     bool Keep(void* object) {
         // Allocate bookkeeping before any managed side effect.
         handles.emplace_back();
@@ -57,8 +64,8 @@ struct EntityCreationSession::State {
         }
     }
 };
-EntityCreationSession::EntityCreationSession(const EntityOwner& owner,Method factory,Method story,ManagedObjects* objects,EntityAccessMethods access,ReferenceMethods references,EntityCreationScope::BirthObserver observer)
-    :state_(new State(owner,factory,story,objects,std::move(access),references,std::move(observer))) {}
+EntityCreationSession::EntityCreationSession(const EntityOwner& owner,Method factory,Method story,ManagedObjects* objects,EntityAccessMethods access,ReferenceMethods references,EntityCreationScope::BirthObserver observer,Method partner)
+    :state_(new State(owner,factory,story,objects,std::move(access),references,std::move(observer),partner)) {}
 EntityCreationSession::~EntityCreationSession() {
     if(state_->emotion_boundary)state_->emotion_boundary->Stop();
     if(state_->outfit_boundary)state_->outfit_boundary->Stop();
@@ -109,6 +116,10 @@ Method ResolveStoryActorFactory(MethodResolver& m) {
         {"RPG.GameCore.EntityManager","RPG.GameCore.NPCSubType","System.String","System.String","System.String","System.String",
          "RPG.GameCore.StoryCharacterRow","System.String","System.String","System.String[]","System.Boolean","System.Action<RPG.GameCore.GameEntity>"},MethodKind::Static);
 }
+Method ResolvePartnerFactory(MethodResolver& m) {
+    return m.Resolve("RPG.GameCore","EntityManagerExtension","CreatePartner","RPG.GameCore.GameEntity",
+        {"RPG.GameCore.EntityManager","RPG.GameCore.GameEntity","System.String","System.String"},MethodKind::Static);
+}
 void EntityCreationSession::Create(const NpcCreateInput& input) {
     if(!input.definition || !input.row)throw std::invalid_argument("map NPC requires its definition and row");
     CreateOwned(input.world,input.manager,false,[&] {
@@ -134,6 +145,33 @@ void EntityCreationSession::Create(const StoryCreateInput& input) {
         CreateEntityResult result;
         result.call=native::Call(s.story_factory,&result.entity,input.manager,4,graph,model,static_cast<void*>(nullptr),name,
             static_cast<void*>(nullptr),config,static_cast<void*>(nullptr),static_cast<void*>(nullptr),true,static_cast<void*>(nullptr));
+        return result;
+    });
+}
+void EntityCreationSession::Create(const PartnerCreateInput& input) {
+    OperationSpan timing("sdk.creation.partner");
+    auto& s=*state_;
+    if(s.status.create_started)throw std::logic_error("entity creation epoch is single-use");
+    if(!s.objects || !s.partner_factory.code || input.model_path.empty() || input.character_config.empty())
+        throw std::invalid_argument("partner requires its factory and model/configuration paths");
+    if(!s.SummonerLive(input.summoner))throw std::invalid_argument("partner summoner must be a live entity owned by this client");
+    const auto parent=s.access.Read(input.summoner.entity);
+    if(!parent.owner_world.read.returned || parent.owner_world.value!=input.world || !s.SummonerLive(input.summoner))
+        throw std::invalid_argument("partner summoner is not in the creation world");
+    s.summoner=input.summoner;
+    CreateOwned(input.world,input.manager,true,[&] {
+        if(!s.Keep(input.summoner.entity))throw std::runtime_error("partner summoner retention failed");
+        auto text=[&](const std::string& value) {
+            const auto result=s.objects->NewStringUtf8(value.c_str());
+            if(!result.call.returned || !result.object || !s.Keep(result.object))throw std::runtime_error("partner input string retention failed");
+            return result.object;
+        };
+        auto* model=text(input.model_path);auto* config=text(input.character_config);
+        // Managed preparation can re-enter disposal. A retained reference
+        // alone does not preserve the parent's engine lifetime.
+        if(!s.SummonerLive(input.summoner))throw std::runtime_error("partner summoner ended during preparation");
+        CreateEntityResult result;
+        result.call=native::Call(s.partner_factory,&result.entity,input.manager,input.summoner.entity,model,config);
         return result;
     });
 }
@@ -198,6 +236,7 @@ void EntityCreationSession::Service(const WorldFrame& frame) {
     auto& s = *state_;
     if(s.emotion_boundary)s.emotion_boundary->ActivateOnCurrentThread();
     if (!s.status.create_started || s.status.closed) return;
+    if(s.summoner.entity && !s.SummonerLive(s.summoner))s.status.removal_requested=true;
     // Observe natural disposal even when the old world is no longer serviced.
     // This performs no method call on the old entity/world/model.
     s.FinishDisposed();

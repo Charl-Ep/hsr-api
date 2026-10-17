@@ -258,6 +258,15 @@ PresentationContext::EntityEventFactory PresentationContext::EntityEvents() cons
                 r.Arrays(),ManagedReferenceList(b.event_list),r.Scene()},story_offset);
     };
 }
+PresentationContext::EntityFactory PresentationContext::Partners() const {
+    auto s=storage_->state;
+    Method partner;
+    if(s->metadata)partner=ResolvePartnerFactory(*s->metadata);
+    return [s,partner,observer=BirthObserver()] {
+        return std::make_unique<EntityCreationSession>(s->owner,Method{},Method{},&s->objects,
+            s->bindings.entity,s->bindings.references,observer,partner);
+    };
+}
 PresentationContext::NpcInputFactory PresentationContext::NpcInputs() const {
     if(!storage_->state->metadata)return {};
     return [s=storage_->state](std::uint32_t id,const char* name,Position3 position,Rotation4 rotation) {

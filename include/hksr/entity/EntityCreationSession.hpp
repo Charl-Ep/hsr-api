@@ -13,12 +13,18 @@ struct StoryCreateInput {
     EntityManager* manager=nullptr;
     std::string unique_name,model_path,adventure_config;
 };
+struct PartnerCreateInput {
+    GameWorld* world=nullptr;
+    EntityManager* manager=nullptr;
+    EntityToken summoner;
+    std::string model_path,character_config;
+};
 // Story creation requests official asynchronous model loading. A returned,
 // owned entity is not a loaded model; continue Service and observe readiness.
 class HKSR_API EntityCreationSession {
 public:
     EntityCreationSession(const EntityOwner&,Method map_factory,Method story_factory,ManagedObjects*,
-        EntityAccessMethods,ReferenceMethods,EntityCreationScope::BirthObserver={});
+        EntityAccessMethods,ReferenceMethods,EntityCreationScope::BirthObserver={},Method partner_factory={});
     EntityCreationSession(const EntityOwner& owner,Method map_factory,EntityAccessMethods access,ReferenceMethods refs,EntityCreationScope::BirthObserver observer={})
         :EntityCreationSession(owner,map_factory,{},nullptr,std::move(access),refs,std::move(observer)){}
     ~EntityCreationSession();
@@ -26,6 +32,9 @@ public:
     EntityCreationSession& operator=(const EntityCreationSession&)=delete;
     void Create(const NpcCreateInput&);
     void Create(const StoryCreateInput&);
+    // Creates an official Partner owned by this client, not a gameplay summon
+    // task. Member naming, attachment and visual initialization are separate.
+    void Create(const PartnerCreateInput&);
     void Remove();
     void Service(const WorldFrame&);
     const EntityCreationStatus& Status() const;
@@ -38,4 +47,5 @@ private:
     State* state_;
 };
 HKSR_API Method ResolveStoryActorFactory(MethodResolver&);
+HKSR_API Method ResolvePartnerFactory(MethodResolver&);
 }

@@ -12,6 +12,7 @@ Call `PresentationContext::Create(metadata, capabilities, policy, trace)` from `
 | `Models()` | Shared model/renderer/Art provider with independent resource-owner factories |
 | `Npcs()`, `NpcInputs()`, `NpcEvents()` | Creation, private input and event-supplement factories |
 | `Entities()`, `EntityEvents()` | Map-NPC or independent story-actor creation and event supplements |
+| `Partners()` | Auxiliary-actor creation factory for an owned summoner |
 | `Animations()` | Per-entity animation session factory |
 | `Baselines()`, `ModelTransitions()` | Model capture and transition factories |
 | `Controls()`, `Player()` | Control-session factory and current-player resolver |
@@ -59,6 +60,14 @@ Story creation requests the official asynchronous model-loading path. Factory re
 `TrackedEntities().BeforeDispose(token, callback)` registers a one-shot notification at the existing entity-disposal entry, before components are destroyed. Register and cancel on the owning engine thread; disconnect subscriptions before releasing callback targets. The callback must not dispose that entity. Exceptions are isolated and do not suppress the original call or other subscribers. Wrong-thread notifications are reported and not invoked.
 
 `IsRetiring(token)` becomes true at this boundary, including when the original disposal later fails. `IsDisposed(token)` becomes true only after normal return. A stale or retiring generation cannot accept a new disposal subscription. `Forget` removes remaining subscriptions for that generation.
+
+## Partner actors
+
+`context.Partners()()` creates an `EntityCreationSession` for `PartnerCreateInput`: world, entity manager, summoner token, model prefab and character configuration. The summoner must be a live generation owned by the same context in that world. The session calls `EntityManagerExtension.CreatePartner` and retains inputs and birth receipts, including when the factory throws after creating an entity.
+
+Factory return does not imply model readiness. Continue `Service` while loading and retiring. A summoner that ends causes the session to request retirement of any remaining owned child; children already disposed by the engine are not removed twice. `Remove` retires the child, not its summoner. Keep servicing until `Status().closed`.
+
+This entry does not execute a summon task or configure member names, attachment, animation synchronization or visibility. The engine factory's notifications remain intact. Configure subsequent visual behavior separately.
 
 ## Event construction observations
 

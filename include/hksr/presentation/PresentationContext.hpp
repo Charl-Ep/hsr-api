@@ -110,6 +110,9 @@ public:
     NpcFactory Npcs() const;
     using EntityFactory=std::function<std::unique_ptr<EntityCreationSession>()>;
     EntityFactory Entities() const;
+    // Official auxiliary actors. Uses the same birth provenance and event
+    // isolation as other owned entities, without Story/NPC initialization.
+    EntityFactory Partners() const;
     using NpcInputFactory=std::function<std::unique_ptr<MapNpcInputs>(std::uint32_t,const char*,Position3,Rotation4)>;
     NpcInputFactory NpcInputs() const;
     using NpcEventFactory=std::function<std::unique_ptr<NpcEventSupplement>(NpcCreationSession&,GameWorld*)>;
