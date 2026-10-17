@@ -2,6 +2,7 @@
 #include <hksr/presentation/PresentationBindings.hpp>
 #include <hksr/presentation/PresentationResources.hpp>
 #include <hksr/presentation/PresentationIsolation.hpp>
+#include <hksr/presentation/timeline/OwnedTimeline.hpp>
 #include <hksr/runtime/RuntimeHost.hpp>
 #include <hksr/entity/EntityOwner.hpp>
 #include <hksr/entity/NpcCreationSession.hpp>
@@ -18,6 +19,7 @@
 #include <hksr/presentation/effects/OwnedEffectRequest.hpp>
 #include <hksr/presentation/effects/PresentationEffects.hpp>
 #include <hksr/presentation/effects/EffectSubmissions.hpp>
+#include <hksr/presentation/effects/EffectTriggerSource.hpp>
 #include <hksr/presentation/events/AnimationExitConfig.hpp>
 #include <hksr/presentation/events/AnimationEventPolicy.hpp>
 #include <hksr/presentation/events/AnimationEventConstruction.hpp>
@@ -50,6 +52,7 @@ struct PresentationContext::State {
     std::unique_ptr<EffectInputs> effect_inputs;
     std::unique_ptr<EffectControl> effect_control;
     std::unique_ptr<EffectActions> effect_actions;
+    std::unique_ptr<EffectTriggerSource> effect_sources;
     bool effect_control_closed=false;
     std::optional<EffectAccess> effect_access;
     EffectCompletionAllocation completion;
@@ -335,6 +338,18 @@ std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices()
         },std::move(actions));
 }
 PresentationIsolationStatus PresentationContext::IsolationStatus() const{return storage_->state->isolation_status;}
+std::unique_ptr<OwnedTimeline> PresentationContext::CreateTimeline(EntityToken token,GameWorld* world) const {
+    const auto s=storage_->state;
+    if(!s->isolation)throw std::logic_error("Timeline playback requires presentation isolation");
+    return s->isolation->CreateTimeline({token,world});
+}
+TextResult PresentationContext::ReadEffectTriggerPath(const EffectTriggerExecution& trigger) const {
+    auto& s=*storage_->state;
+    if(!s.metadata)throw std::logic_error("effect source reading requires prepared metadata");
+    if(!s.effect_sources)s.effect_sources=std::make_unique<EffectTriggerSource>(
+        s.metadata->ReadFields("RPG.GameCore","TriggerEffect"),s.bindings.references,s.resources.Components());
+    return s.effect_sources->Path(trigger);
+}
 std::unique_ptr<EffectSubmissions> PresentationContext::CreateEffectObserver(
     std::function<void(const EffectSubmission&)> before,
     std::function<void(const EffectSubmission&,bool)> after) const {

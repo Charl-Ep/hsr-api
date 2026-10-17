@@ -123,6 +123,7 @@ set(HKSR_API_SOURCES
     src/presentation/effects/EffectInputs.cpp
     src/presentation/effects/EffectQueries.cpp
     src/presentation/effects/EffectRelations.cpp
+    src/presentation/effects/EffectTriggerSource.cpp
     src/presentation/effects/EffectScopes.cpp
     src/presentation/effects/EffectSubmissions.cpp
     src/presentation/effects/OwnedEffectRequest.cpp
@@ -144,6 +145,8 @@ set(HKSR_API_SOURCES
     # src/presentation/timeline
     src/presentation/timeline/EventRecordLifetime.cpp
     src/presentation/timeline/TimelineAsset.cpp
+    src/presentation/timeline/OwnedTimeline.cpp
+    src/presentation/timeline/CommonTimelinePlayback.cpp
     src/presentation/timeline/TimelineCallScope.cpp
     src/presentation/timeline/TimelineEnvironment.cpp
     src/presentation/timeline/TimelineGraphAccess.cpp
@@ -185,6 +188,7 @@ set(HKSR_API_TEST_SOURCES
     src/presentation/events/ManagedConfigProjection.cpp
 
     # src/presentation/timeline
+    src/presentation/timeline/CommonTimelinePlayback.cpp
     src/presentation/timeline/TimelineRegistryAccess.cpp
     src/presentation/timeline/TimelineRegistryTracking.cpp
     src/presentation/timeline/TimelineWaits.cpp
@@ -237,6 +241,7 @@ set(HKSR_API_TEST_SOURCES
     tests/presentation/effects/EffectInputsTests.cpp
     tests/presentation/effects/EffectQueryTests.cpp
     tests/presentation/effects/EffectRelationsTests.cpp
+    tests/presentation/effects/EffectTriggerSourceTests.cpp
     tests/presentation/effects/OwnedEffectRequestTests.cpp
     tests/presentation/events/NpcEventSupplementTests.cpp
 
@@ -251,6 +256,7 @@ set(HKSR_API_TEST_SOURCES
 
     # tests/presentation/timeline
     tests/presentation/timeline/TimelineAssetTests.cpp
+    tests/presentation/timeline/OwnedTimelineTests.cpp
     tests/presentation/timeline/TimelineGraphTests.cpp
     tests/presentation/timeline/TimelineOwnershipTests.cpp
     tests/presentation/timeline/TimelineRegistryTests.cpp

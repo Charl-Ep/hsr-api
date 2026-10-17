@@ -4,6 +4,7 @@
 #include <functional>
 
 namespace hksr::sdk_v1 {
+class OwnedTimeline;
 namespace detail {void ServiceRetiredPresentations() noexcept;}
 // SDK boundaries, NOT an animation scheduler. Prepare before owned creation.
 // Unknown sources retain original behavior with diagnostics, not a sandbox.
@@ -21,6 +22,7 @@ public:
     HKSR_API EntityOrigin Source(GameEntity*) const;
     HKSR_API void RememberRequest(EffectReference,GameEntity*);
     HKSR_API void RetireRequest(EffectReference);
+    HKSR_API std::unique_ptr<OwnedTimeline> CreateTimeline(EntityOrigin);
     // Shared service collection is coalesced per official runtime delivery.
     HKSR_API void Collect();
     // After client-owned requests/entities drain, detach ALL client callbacks

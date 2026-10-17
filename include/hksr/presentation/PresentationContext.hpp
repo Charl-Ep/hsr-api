@@ -28,8 +28,11 @@ struct Position3;
 struct Rotation4;
 class NpcEventSupplement;
 class PresentationEffects;
+class OwnedTimeline;
 class EffectSubmissions;
 struct EffectSubmission;
+struct EffectTriggerExecution;
+struct TextResult;
 class AnimationEventPolicy;
 class AnimationEventConstruction;
 struct AnimationEventSource;
@@ -121,6 +124,10 @@ public:
     ControllerBindingServices Controllers() const;
     std::optional<EffectRequestServices> Effects() const;
     std::shared_ptr<const PresentationEffects> EffectServices() const;
+    // Engine-thread Common playback. The caller services the request through
+    // pool return, including after the actor/action has ended.
+    std::unique_ptr<OwnedTimeline> CreateTimeline(EntityToken,GameWorld*) const;
+    TextResult ReadEffectTriggerPath(const EffectTriggerExecution&) const;
     // Construct during preparation; activate and stop on the owner thread.
     // Receives only this client's entity generations, including creation-time
     // and retained retirement provenance. Callbacks must not service removals.

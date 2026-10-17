@@ -124,8 +124,16 @@ Create an effect observer during preparation, then call its `ActivateOnCurrentTh
 
 See [animation inputs](animation.md) and the [C++ ownership contract](cpp-interface.md).
 
+## Common Timelines
+
+`context.CreateTimeline(entity, world)` creates an `OwnedTimeline` for that client's entity generation. `Start(path, wrap_mode, start_time)` uses the official global Timeline service with zero position/rotation and no explicit asset or actor-binding callback. Wrap modes are the engine's integer values 0–2. It does not execute a `PlayTimeline` task or its global completion/volume notifications.
+
+`Cancel` records intent; `Service` stops the captured record and observes its registry borrow. Keep servicing until `Status().drained`. Stopped Directors remain owned until pool return, removal or reuse. Requests retain any attributed borrows from an interrupted start; incomplete attribution remains diagnostic, not successful cleanup. Service never updates a Director's animation clock.
+
 ## Event definition selection
 
 During the construction observer's `before` callback, `context.ReadEventDefinitions(source)` reads the final time-point, group-enter, group-exit and behavior task collections. Rows contain copied names and borrowed collection references; issues are reported per row. Logic entries have no task collection and are not included.
 
 Match a row's `configurations` against the actual task-builder receipt inside the same construction scope. Do not pair configuration and executor arrays by index: disabled or unconstructed tasks may be absent from the result. The reader neither loads another config file nor starts any task. Retain managed references explicitly if they must outlive the construction callback scope.
+
+`context.ReadEffectTriggerPath(submission.trigger)` copies the attributed trigger's original `EffectPath` inside the submission callback. It is a source label, not an effect lookup. An absent trigger and an empty configured path produce distinct results.

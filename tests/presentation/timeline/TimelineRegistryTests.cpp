@@ -3,6 +3,8 @@
 #include "../../../src/presentation/timeline/TimelineRegistryTracking.hpp"
 #include "../../../src/presentation/timeline/TimelineTasks.hpp"
 #include "../../../src/presentation/timeline/TimelineWaits.hpp"
+#include "../../../src/presentation/timeline/CommonTimelinePlayback.hpp"
+#include <hksr/entity/LifecycleHooks.hpp>
 #include "../../../src/presentation/PresentationClients.hpp"
 #include <Windows.h>
 #include <cstddef>
@@ -24,6 +26,12 @@ struct Dictionary {Tag tag=DictionaryTag;std::map<void*,Record*> items;};
 struct History {Tag tag=HistoryTag;std::vector<std::pair<Text*,int>> items;};
 History official_history;
 struct Registry {Tag tag=RegistryTag;List* list=nullptr;Dictionary* dictionary=nullptr;History* history=&official_history;};
+Registry* timeline_manager=nullptr;
+Tag manager_field=FieldTag;
+bool fail_after_play=false;
+unsigned __fastcall RuntimeId(void*,void*){return 123;}
+bool __fastcall EntityLoaded(void*,void*){return true;}
+void* __fastcall ManagerValue(void* field,void* target,void*){Check(field==&manager_field && !target);return timeline_manager;}
 std::vector<std::unique_ptr<Registry>> registry_views;
 std::vector<std::unique_ptr<History>> private_histories;
 std::vector<std::unique_ptr<List>> private_lists;
@@ -44,6 +52,7 @@ Entity* __fastcall Caster(Context* c,void*) {
 }
 void* __fastcall World(Entity* e,void*){return e->world;}
 void* __fastcall GetField(void* type,Text* name,int flags,void*) {
+    if(name->value==L"s_TimelineManager"){Check(flags==56);return &manager_field;}
     Check(type==&reflected_type && flags==54);
     if(name->value==L"DFNAOFNEBHC")return &history_reflected_field;
     if(name->value==L"MKDJOLKJJON")return &query_reflected_field;
@@ -192,6 +201,15 @@ DWORD InvokeBorrow(Registry* r,Text* name,Text* resource,void* asset,const void*
     __try{*result=Borrow(r,name,resource,asset,pos,rot,&metadata);return 0;}
     __except(EXCEPTION_EXECUTE_HANDLER){return GetExceptionCode();}
 }
+int __fastcall PlayCommon(Registry* registry,unsigned id,Text* path,void* asset,const float* position,const float* rotation,
+    void* bind,void* complete,double time,int wrap,void* info) {
+    Check(id==123 && !asset && !bind && !complete && time==0 && wrap==2 && info==&metadata);
+    Check(position[0]==0 && position[1]==0 && position[2]==0 && rotation[0]==0 && rotation[1]==0 && rotation[2]==0);
+    auto* director=Borrow(registry,path,path,asset,position,rotation,info);
+    auto* record=registry->dictionary->items.at(director);record->phase=2;
+    if(fail_after_play)RaiseException(0xe0760429,0,0,nullptr);
+    return record->id;
+}
 DWORD InvokeEnd(TimelineBoundary operation,Registry* r,void* arg) {
     __try {
         if(operation==TimelineBoundary::Return)Return(r,arg,&metadata);
@@ -224,6 +242,7 @@ struct Provider:MethodResolver,ObjectMetadata,ManagedObjects {
     }
     ObjectResult AllocateObject(const char*,const char*) override {throw std::logic_error("not used");}
     ObjectResult ManagedType(const char* ns,const char* type) override {
+        if(std::string(ns)=="RPG.Client" && std::string(type)=="GlobalVars")return {{true,0},&reflected_type};
         Check(std::string(ns).empty() && (std::string(type)=="JODBIGDDMOB" || std::string(type)=="IGBEIECLHMC" || std::string(type)=="HPPNAAGGAMP"));return {{true,0},&reflected_type};
     }
     Method Resolve(const char* ns,const char* type,const char* name,const char* result,std::initializer_list<const char*> args,MethodKind kind) override {
@@ -232,7 +251,11 @@ struct Provider:MethodResolver,ObjectMetadata,ManagedObjects {
             {"","EBMMGODFEEO",{{"HFKFNFKIEON","System.Void",{},false,M(StopRecord)}}},
             {"System","RuntimeType",{{"GetField","System.Reflection.FieldInfo",{"System.String","System.Reflection.BindingFlags"},false,M(GetField)}}},
             {"RPG.GameCore","TaskContext",{{"get_CasterEntity","RPG.GameCore.GameEntity",{},false,M(Caster)}}},
-            {"RPG.GameCore","GameEntity",{{"get_OwnerWorldRef","RPG.GameCore.GameWorld",{},false,M(World)}}},
+            {"RPG.GameCore","GameEntity",{{"get_OwnerWorldRef","RPG.GameCore.GameWorld",{},false,M(World)},
+                {"get_RuntimeID","System.UInt32",{},false,M(RuntimeId)},{"get_IsLoaded","System.Boolean",{},false,M(EntityLoaded)}}},
+            {"","NCEDGGKOMIH",{{"NOLKCBFDAOJ","System.Int32",{"System.UInt32","System.String","UnityEngine.Playables.PlayableAsset",
+                "UnityEngine.Vector3","UnityEngine.Vector3","System.Action<UnityEngine.Playables.PlayableDirector,UnityEngine.Playables.PlayableAsset>",
+                "UnityEngine.Events.UnityAction","System.Double","UnityEngine.Playables.DirectorWrapMode"},false,M(PlayCommon)}}},
             {"","OKKFJLFMPFK",{
                 {"OnTaskBegin","System.Void",{},false,M(TaskVoid<0>)},
                 {"Tick","System.Void",{"System.Single"},false,M(TaskTick<11>)},
@@ -300,7 +323,7 @@ struct Provider:MethodResolver,ObjectMetadata,ManagedObjects {
             {"RemoveAt","System.Void",{"System.Int32"},false,M(RemoveListItem)}}};
         case DictionaryTag:return {"Fixture","DirectorDictionary",{
             {"TryGetValue","System.Boolean",{"UnityEngine.Playables.PlayableDirector","EBMMGODFEEO&"},false,M(Find,&generic_metadata)}}};
-        case FieldTag:return {"Fixture","Field",{{"SetValue","System.Void",
+        case FieldTag:return {"Fixture","Field",{{"GetValue","System.Object",{"System.Object"},false,M(ManagerValue)},{"SetValue","System.Void",
             {"System.Object","System.Object","System.Reflection.BindingFlags","System.Reflection.Binder","System.Globalization.CultureInfo"},false,M(SetField)}}};
         default:throw std::runtime_error("unexpected synthetic type query");
         }
@@ -444,6 +467,35 @@ void TestTimelineRegistry() {
     Check(handle_a==handle_b && installations==1);
     auto& tracking=*handle_b;
     tracking.ActivateOnCurrentThread();
+    {
+        int source_world;Entity source_entity{&source_world};
+        const auto token=TrackedEntities().Track(reinterpret_cast<GameEntity*>(&source_entity));
+        const EntityOrigin origin{token,reinterpret_cast<GameWorld*>(&source_world)};
+        const TimelineOwner source{reinterpret_cast<std::uintptr_t>(origin.world),reinterpret_cast<std::uintptr_t>(token.entity),token.generation};
+        CommonTimelinePlayback playback(provider,provider,provider,refs,tracking);timeline_manager=&registry;
+        auto first=playback.Start(origin,"scene",2,0);
+        Check(first.call.returned && first.attributed && first.references.size()==1 && first.playback==record.id);
+        auto ref=first.references.front();Check(playback.Observe(source,ref)==TimelinePlaybackPhase::Playing);
+        Check(playback.Stop(source,ref).returned && record.phase==4);
+        Check(playback.Observe(source,ref)==TimelinePlaybackPhase::Stopped);
+        Check(InvokeEnd(TimelineBoundary::Return,&registry,&director)==0);
+        Check(playback.Observe(source,ref)==TimelinePlaybackPhase::Retired);
+        auto second=playback.Start(origin,"scene",2,0);Check(second.attributed && second.call.returned);
+        Check(playback.Stop(source,ref).returned && record.phase==2); // old request cannot stop the new borrow
+        fail_after_play=true;auto interrupted=playback.Start(origin,"scene",2,0);fail_after_play=false;
+        Check(!interrupted.call.returned && interrupted.attributed && interrupted.references.size()==1);
+        Check(playback.Stop(source,interrupted.references.front()).returned && record.phase==4);
+        Check(InvokeEnd(TimelineBoundary::Return,&registry,&director)==0);
+        // Failed Borrow still retains its exact private-name reference, not a
+        // coincident resource or an increment guessed from the last ID.
+        fail_at=1;auto partial=playback.Start(origin,"scene",2,0);fail_at=0;
+        Check(!partial.call.returned && partial.attributed && partial.references.size()==1);
+        Check(InvokeEnd(TimelineBoundary::Remove,&registry,&record)==0);
+        list.items={&record,&record2};dict.items={{&director,&record},{&director2,&record2}};
+        TrackedEntities().Disposed(token);auto dead=playback.Start(origin,"scene",2,0);
+        Check(!dead.call.returned && dead.attributed && dead.references.empty());TrackedEntities().Forget(token);
+        Check(playback.Close());timeline_manager=nullptr;
+    }
     int world;Entity owned_entity{&world},official_entity{&world};Context owned_context{&owned_entity},official_context{&official_entity};
     Task owned_task{17,&owned_context},official_task{17,&official_context};
     const TimelineOwner task_owner{reinterpret_cast<std::uintptr_t>(&world),reinterpret_cast<std::uintptr_t>(&owned_entity),75};

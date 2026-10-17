@@ -2,6 +2,7 @@
 #include "../runtime/RuntimeResident.hpp"
 #include "timeline/TimelineWaits.hpp"
 #include "timeline/TimelineEnvironment.hpp"
+#include "timeline/CommonTimelinePlayback.hpp"
 #include "effects/EffectScopes.hpp"
 #include "PresentationClients.hpp"
 #include "../runtime/RepeatedDiagnostics.hpp"
@@ -47,6 +48,8 @@ struct PresentationIsolation::State::Shared {
     std::unique_ptr<detail::EffectQueries> queries;
     std::unique_ptr<detail::EffectScopes> effects;
     std::unique_ptr<detail::TimelineEnvironment> environment;
+    std::unique_ptr<detail::CommonTimelinePlayback> playback;
+    ReferenceMethods references;
     static auto& Slot(){static auto* value=new detail::PresentationServiceSlot<Shared>;return *value;}
     void Log(const std::string& text) noexcept {
         try {std::lock_guard<std::recursive_mutex> lock(trace_mutex);
@@ -54,7 +57,7 @@ struct PresentationIsolation::State::Shared {
             ++tail_errors;last_tail_error=text;clients.Log(text);}catch(...){}
     }
     Shared(RuntimeMetadata& m,ReferenceMethods refs)
-        :metadata(detail::RetainRuntimeMetadata(m)),sources(refs) {
+        :metadata(detail::RetainRuntimeMetadata(m)),sources(refs),references(refs) {
         if(m.Version()!=RuntimeVersion::Hsr460)throw std::invalid_argument("presentation isolation requires the qualified 4.6 provider");
         const auto fields=[this](const char* ns,const char* type){return metadata->ReadFields(ns,type);};
         const auto log=[this](const std::string& text){Log(text);};
@@ -74,6 +77,11 @@ struct PresentationIsolation::State::Shared {
     }
     void CheckThread() const {
         if(!thread || thread!=GetCurrentThreadId())throw std::logic_error("presentation operation requires its activated engine thread");
+    }
+    detail::CommonTimelinePlayback& Playback() {
+        CheckThread();
+        if(!playback)playback=std::make_unique<detail::CommonTimelinePlayback>(*metadata,*metadata,*metadata,references,*registry);
+        return *playback;
     }
     void Activate() {
         if(thread && thread!=GetCurrentThreadId())throw std::logic_error("presentation isolation cannot migrate engine threads");
@@ -151,6 +159,19 @@ void PresentationIsolation::RetireRequest(EffectReference ref){
     state_->service->sources.RetireRequest(ref);state_->requests.erase(i);
 }
 void PresentationIsolation::Collect(){if(state_)state_->service->Collect();}
+std::unique_ptr<OwnedTimeline> PresentationIsolation::CreateTimeline(EntityOrigin origin) {
+    if(!state_)throw std::logic_error("presentation client retired");
+    const auto shared=state_->service;const auto client=state_->client;
+    shared->CheckThread();shared->clients.RequireOwner(client,origin);
+    const auto owner=Owner(origin).value();
+    return std::make_unique<OwnedTimeline>(TimelineRequestServices{
+        [shared,client,origin](const std::string& path,int wrap,double time) {
+            shared->CheckThread();shared->clients.RequireOwner(client,origin);
+            return shared->Playback().Start(origin,path,wrap,time);
+        },
+        [shared,owner](TimelineReference ref){return shared->Playback().Observe(owner,ref);},
+        [shared,owner](TimelineReference ref){return shared->Playback().Stop(owner,ref);}});
+}
 void PresentationIsolation::Retire() {
     if(!state_)return;state_->service->CheckThread();
     state_->service->Log("presentation isolation: client retired; shared SDK service retains official playback tails");

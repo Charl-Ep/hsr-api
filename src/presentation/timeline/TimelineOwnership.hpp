@@ -171,6 +171,10 @@ public:
             if(row.second.owner==owner && !row.second.returned)return true;
         return false;
     }
+    // Stopped is deliberately NOT retired: the registry still owes its return.
+    bool Pending(TimelineTicket ticket) const {
+        const auto* entry=Find(ticket);return entry && !entry->returned;
+    }
 private:
     struct Entry {TimelineTicket ticket;std::optional<TimelineOwner> owner;bool returned,incomplete;};
     std::map<TimelineRecordKey,Entry> records_;

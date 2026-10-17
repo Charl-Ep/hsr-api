@@ -1,4 +1,5 @@
 #include "TimelineRegistryTracking.hpp"
+#include "TimelineBorrowCapture.hpp"
 #include <hksr/managed/ManagedRoots.hpp>
 #include <hksr/unity/ComponentConfig.hpp>
 #include <hksr/native/Invocation.hpp>
@@ -198,6 +199,7 @@ struct TimelineRegistryTracking::State {
     void Commit(const TimelineRegistryRecord& row,const std::optional<TimelineOwner>& source,bool complete=true) {
         Pin(row.view.key);
         const auto ticket=ownership.Borrow(row.view.key,row.view.playback,source,complete);
+        TimelineBorrowCapture::Record(ticket,source);
         Event(complete?"borrow observed":"incomplete borrow retained privately",ticket,source);
     }
     void Cleanup(Invocation& inv) noexcept {
@@ -212,6 +214,7 @@ struct TimelineRegistryTracking::State {
              (query && TimelineCallScope::ResourceQueriesAllowed() && !ownership.HasPrivate(reinterpret_cast<std::uintptr_t>(call.registry)))))
             return nullptr; // public fast path: no registry inspection or replacement
         auto inv=std::make_unique<Invocation>(*this);
+        if(call.operation==TimelineBoundary::Borrow)TimelineBorrowCapture::Entered(TimelineCallScope::Current());
         try {
             inv->access.Hold(call.registry);inv->access.Hold(call.argument);
             inv->access.Hold(call.resource);inv->access.Hold(call.asset);
