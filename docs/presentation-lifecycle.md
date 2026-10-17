@@ -112,6 +112,8 @@ When a carrier has no adventure MonoAvatar, the session can use an existing Look
 
 `StartEntity(caster, target, path, options)` keeps the creator and recipient distinct. It maps the path through the caster, retains both entities, and uses the official parameter pool and asynchronous manager. Options specify the engine name, position/rotation offsets, optional scale, attachment, fade-in and immediate simulation. Inputs are copied before engine calls; cancellation uses the same request lifecycle as `Start`.
 
+`attach_point` selects an initial named attachment such as `Muzzle`. It is independent of `attach_to_target`, which controls continued parenting. The loader resolves the attachment before initializing the effect; an empty name leaves the prefab's default attachment policy in place.
+
 This entry accepts resolved entity-relative inputs. It does not evaluate target aliases or task expressions, consult global mutex rules, hide entities during loading, attach Timelines or run post-load subobject tasks. Programs own reuse and logical effect names. Engine `unique_name` is optional and is not an ownership boundary.
 
 `StartSpatial(caster, path, options)` submits an effect at a fixed world position and quaternion rotation, without a target entity or attachment. The caster still supplies resource mapping and ownership. The SDK normalizes a nonzero quaternion and writes both the loader's initial pose and the final position anchor before submission. Scale, engine name, fade-in and immediate simulation are optional inputs. Effect animation may move it after initialization. Cancellation and late completion use the same owned request lifecycle.

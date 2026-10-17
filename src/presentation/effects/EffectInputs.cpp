@@ -116,7 +116,8 @@ EffectInputResult EffectInputs::Configure(void* parameters,void* target,void* co
 }
 EffectInputResult EffectInputs::ConfigureEntity(void* parameters,void* caster,void* target,void* completion,const EntityEffectOptions& options) {
     if(!target)return {};
-    return ConfigureImpl(parameters,caster,target,completion,options,nullptr);
+    const auto captured=options;
+    return ConfigureImpl(parameters,caster,target,completion,captured,nullptr);
 }
 EffectInputResult EffectInputs::ConfigureSpatial(void* parameters,void* caster,void* completion,const SpatialEffectOptions& input) {
     auto spatial=input;
@@ -136,18 +137,28 @@ EffectInputResult EffectInputs::ConfigureImpl(void* parameters,void* caster,void
     if(s.closed || !parameters || !caster || !completion)return out;
     const auto finite=[](Position3 value){return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);};
     if(!finite(options.position_offset) || !finite(options.rotation_offset) || (options.scale && !finite(*options.scale)) ||
-        options.unique_name.find('\0')!=std::string::npos)throw std::invalid_argument("invalid entity effect visual inputs");
+        options.unique_name.find('\0')!=std::string::npos || options.attach_point.find('\0')!=std::string::npos)
+        throw std::invalid_argument("invalid entity effect visual inputs");
     if(spatial)s.PrepareSpatial(parameters);else s.PrepareEntity(parameters);
     const auto caster_field=s.Get("TriggerEffectParams","CasterEntity",false);
     const auto target_field=s.Get("TriggerEffectParams","TargetEntity",false);
     const auto name_field=s.Get("TriggerEffectParams","UniqueEffectName",false);
     const auto callback_field=s.Get("TriggerEffectParams","CompleteCallback",false);
-    ManagedRootId text_root=0;
+    const auto attach_field=s.Get("TriggerEffectParams","DynamicAttach",false);
+    ManagedRootId text_root=0,attach_root=0;
     try {
         auto* name=s.Keep(s.objects.NewStringUtf8(options.unique_name.c_str()));text_root=s.retained.back();
+        void* attach_point=nullptr;
+        if(!options.attach_point.empty()) {
+            attach_point=s.Keep(s.objects.NewStringUtf8(options.attach_point.c_str()));attach_root=s.retained.back();
+        }
         out.target=s.Set(caster_field,parameters,caster);
         if(out.target.returned)out.target=s.Set(target_field,parameters,target);
         if(out.target.returned)out.target=s.Set(name_field,parameters,name);
+        // The official task copies TriggerEffect.AttachPoint to DynamicAttach.
+        // The loader derives AttachTransform/AttachPointName before Reset;
+        // writing those cached outputs would be overwritten on load.
+        if(out.target.returned)out.target=s.Set(attach_field,parameters,attach_point);
         if(out.target.returned) {
             // Qualified HSR nullable Vector3 storage: value at +0, presence at
             // +12. Source vectors and parameter offsets are distinct contracts.
@@ -177,8 +188,8 @@ EffectInputResult EffectInputs::ConfigureImpl(void* parameters,void* caster,void
             out.target=native::CallVoid(s.attach,parameters,options.attach_to_target);
         }
         if(out.target.returned)out.completion=s.Set(callback_field,parameters,completion);
-    }catch(...){s.ReleaseValue(text_root);throw;}
-    s.ReleaseValue(text_root);return out;
+    }catch(...){s.ReleaseValue(attach_root);s.ReleaseValue(text_root);throw;}
+    s.ReleaseValue(attach_root);s.ReleaseValue(text_root);return out;
 }
 bool EffectInputs::Close() {
     auto& s=*state_;s.closed=true;s.fields.clear();

@@ -15,6 +15,7 @@ struct EntityEffectOptions {
     Position3 position_offset{},rotation_offset{};
     std::optional<Position3> scale;
     bool attach_to_target=false,fade_in=true,simulate_immediately=false;
+    std::string attach_point; // initial named attachment, independent of continued parenting
 };
 // Fixed world pose with no target entity or attachment. Caster remains the
 // resource mapping and ownership source; the effect may animate from this pose.

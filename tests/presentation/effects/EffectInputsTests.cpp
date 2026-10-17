@@ -10,12 +10,12 @@
 namespace {
 using namespace hksr::api;
 int info,global_type,params_type,manager,other_manager,entity,callback;
-int global_field,target_field,callback_field,caster_field,name_field,other_target,serial=0,lookups=0;
+int global_field,target_field,callback_field,caster_field,name_field,attach_field,other_target,serial=0,lookups=0;
 void* service=&manager;
 struct NullableVector {Position3 value{};std::uint8_t present=0,padding[3]{};};
 struct NullableRotation {Rotation4 value{};std::uint8_t present=0,padding[3]{};};
 struct Parameters {
-    void* target=nullptr;void* completion=nullptr;void* caster=nullptr;void* name=nullptr;
+    void* target=nullptr;void* completion=nullptr;void* caster=nullptr;void* name=nullptr;void* attach=nullptr;
     NullableVector offset,rotation,scale;std::uint8_t fade=0,simulate=0;std::int32_t usage=0;bool attached=false;float pitch=0;
     NullableVector initial,anchor;NullableRotation orientation;std::uint8_t ignore_prefab=0;
 } parameters;
@@ -33,6 +33,7 @@ void* __fastcall Find(void* type,void* name,int flags,void* meta) {
     if(key=="TargetEntity")return &target_field;
     if(key=="CasterEntity")return &caster_field;
     if(key=="UniqueEffectName")return &name_field;
+    if(key=="DynamicAttach")return &attach_field;
     Check(key=="CompleteCallback");return &callback_field;
 }
 void* __fastcall Get(void* field,void* object,void* meta){Check(field==&global_field && !object && meta==&info);return service;}
@@ -41,6 +42,7 @@ void __fastcall Set(void* field,void* object,void* value,int flags,void* binder,
     if(field==&target_field){Check(!value || value==&entity || value==&other_target);parameters.target=value;}
     else if(field==&caster_field){Check(value==&entity);parameters.caster=value;}
     else if(field==&name_field){parameters.name=value;}
+    else if(field==&attach_field){parameters.attach=value;}
     else {Check(field==&callback_field && value==&callback);parameters.completion=value;
         if(fail_callback)RaiseException(0xE0670001,0,0,nullptr);}
 }
@@ -95,14 +97,20 @@ void TestEffectInputs() {
     Check(!inputs.Configure(&parameters,nullptr,&callback).target.returned);
     EntityEffectOptions options;options.unique_name="scene";options.position_offset={1,2,3};options.rotation_offset={0,90,0};
     options.fade_in=options.simulate_immediately=options.attach_to_target=true;options.scale=Position3{2,3,4};
+    options.attach_point="Muzzle";
     const auto full=inputs.ConfigureEntity(&parameters,&entity,&other_target,&callback,options);
     Check(full.target.returned && full.completion.returned && parameters.caster==&entity && parameters.target==&other_target);
     Check(*static_cast<std::string*>(parameters.name)=="scene" && parameters.offset.present && parameters.offset.value.z==3);
     Check(parameters.rotation.present && parameters.rotation.value.y==90 && parameters.scale.present && parameters.scale.value.x==2);
     Check(parameters.fade==1 && parameters.simulate==1 && parameters.usage==1 && parameters.attached && parameters.pitch==90);
+    Check(parameters.attach && *static_cast<std::string*>(parameters.attach)=="Muzzle");
     const auto persistent_roots=roots.size();options.scale.reset();options.attach_to_target=false;
     Check(inputs.ConfigureEntity(&parameters,&entity,&other_target,&callback,options).completion.returned);
     Check(!parameters.scale.present && !parameters.attached && roots.size()==persistent_roots);
+    Check(parameters.attach && *static_cast<std::string*>(parameters.attach)=="Muzzle"); // initial point without parenting
+    options.attach_point.clear();Check(inputs.ConfigureEntity(&parameters,&entity,&other_target,&callback,options).completion.returned);
+    Check(!parameters.attach && roots.size()==persistent_roots);
+    options.attach_point="Muzzle";
     fail_callback=true;const auto failed=inputs.ConfigureEntity(&parameters,&entity,&other_target,&callback,options);fail_callback=false;
     Check(failed.target.returned && !failed.completion.returned && roots.size()==persistent_roots);
     Check(!inputs.ConfigureEntity(&parameters,&entity,nullptr,&callback,options).target.returned);
@@ -116,7 +124,7 @@ void TestEffectInputs() {
     Check(placed.target.returned && placed.completion.returned && !parameters.target && parameters.caster==&entity);
     Check(parameters.initial.present && parameters.initial.value.z==59 && parameters.anchor.present && parameters.anchor.value.y==-2);
     Check(parameters.orientation.present && parameters.orientation.value.y==1 && parameters.orientation.value.w==0);
-    Check(parameters.ignore_prefab && !parameters.attached && !parameters.offset.present && !parameters.rotation.present);
+    Check(parameters.ignore_prefab && !parameters.attached && !parameters.attach && !parameters.offset.present && !parameters.rotation.present);
     Check(!parameters.fade && parameters.simulate && !parameters.scale.present);
     const auto spatial_roots=roots.size();fail_callback=true;
     Check(!inputs.ConfigureSpatial(&parameters,&entity,&callback,spatial).completion.returned);fail_callback=false;
