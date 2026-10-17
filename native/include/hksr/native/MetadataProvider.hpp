@@ -8,5 +8,8 @@ namespace hksr::sdk_v1::native {
 class MetadataProvider {
 public:
     HKSR_API static std::unique_ptr<RuntimeMetadata> Open(RuntimeVersion version,MetadataConnection connection);
+    // Current-process IL2CPP type descriptor, not a class or managed object.
+    // The caller establishes its provenance and keeps any owner alive.
+    HKSR_API static RuntimeType FromTypeDescriptor(RuntimeMetadata& provider,void* descriptor);
 };
 }

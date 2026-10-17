@@ -172,6 +172,10 @@ NativeType NativeMetadataReader::FieldType(void* field) const {
     if(!type) throw std::runtime_error("declared field type is null");
     return DescribeType(Read<void*>(connection_.functions.class_from_type,"class_from_type failed",type));
 }
+NativeType NativeMetadataReader::FromTypeDescriptor(void* descriptor) const {
+    if(!descriptor)throw std::invalid_argument("null IL2CPP type descriptor");
+    return DescribeType(Read<void*>(connection_.functions.class_from_type,"class_from_type failed",descriptor));
+}
 FieldObservations NativeMetadataReader::ObserveFields(const NativeType& type) const {
     FieldObservations result;
     const auto& api=connection_.functions;
@@ -243,14 +247,16 @@ RuntimeCodeEntries NativeMetadataReader::ReadCodeEntries(const NativeType& type)
     return result;
 }
 
-DeclaredType NativeMetadataReader::ReadMethods(const NativeType& type) const {
+RuntimeMethods NativeMetadataReader::ObserveDeclaredMethods(const NativeType& type) const {
     const auto observed=ObserveMethods(type);
-    if(!observed.iteration_error.empty()) throw std::runtime_error(observed.iteration_error);
-    DeclaredType result{type.name_space,type.name,{}};
+    RuntimeMethods result;result.iteration_error=observed.iteration_error;
     for(const auto& row:observed.methods) {
-        if(!row.error.empty()) throw std::runtime_error(row.error);
-        DeclaredMethod declaration;
+        RuntimeMethodObservation item;auto& declaration=item.declaration;
         declaration.name=row.name;declaration.result=row.result;declaration.parameters=row.parameters;
+        declaration.entry.metadata=row.metadata;
+        item.error=row.error;
+        try {
+        if(!item.error.empty())throw std::runtime_error(item.error);
         void* method=row.metadata;
         std::uint16_t flags = 0;
         void* code = nullptr;
@@ -262,7 +268,18 @@ DeclaredType NativeMetadataReader::ReadMethods(const NativeType& type) const {
         // Abstract/unbound entries still belong in the declaration list. Their
         // existence must not prevent a different method on this type resolving.
         declaration.entry = {code && connection_.executable(code) ? code : nullptr, method};
-        result.methods.push_back(std::move(declaration));
+        }catch(const std::exception& e){item.error=e.what();}
+        result.methods.push_back(std::move(item));
+    }
+    return result;
+}
+DeclaredType NativeMetadataReader::ReadMethods(const NativeType& type) const {
+    const auto observed=ObserveDeclaredMethods(type);
+    if(!observed.iteration_error.empty())throw std::runtime_error(observed.iteration_error);
+    DeclaredType result{type.name_space,type.name,{}};
+    for(const auto& row:observed.methods) {
+        if(!row.error.empty())throw std::runtime_error(row.error);
+        result.methods.push_back(row.declaration);
     }
     return result;
 }

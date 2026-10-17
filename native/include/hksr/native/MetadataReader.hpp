@@ -82,6 +82,8 @@ public:
     std::vector<NativeType> ReadTypes() const;
     MethodObservations ObserveMethods(const NativeType& type) const;
     DeclaredType ReadMethods(const NativeType& type) const;
+    RuntimeMethods ObserveDeclaredMethods(const NativeType& type) const;
+    NativeType FromTypeDescriptor(void* descriptor) const;
     RuntimeCodeEntries ReadCodeEntries(const NativeType& type) const;
     FieldObservations ObserveFields(const NativeType& type) const;
     NativeType ParentType(const NativeType& type) const;

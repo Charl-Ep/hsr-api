@@ -87,6 +87,15 @@ RuntimeType RuntimeMetadata::DeclaringType(RuntimeField field) const {
     if(field.provider_!=this || !field.metadata_)throw std::invalid_argument("runtime field belongs to another provider or is empty");
     CheckedClass(field.owner_);return field.owner_;
 }
+RuntimeMethods RuntimeMetadata::ObserveMethods(RuntimeType type) {
+    return storage_->reader.ObserveDeclaredMethods(storage_->Describe(CheckedClass(type)));
+}
+RuntimeCodeEntries RuntimeMetadata::ReadCodeEntries(RuntimeType type) const {
+    return storage_->reader.ReadCodeEntries(storage_->Describe(CheckedClass(type)));
+}
+RuntimeType native::MetadataProvider::FromTypeDescriptor(RuntimeMetadata& provider,void* descriptor) {
+    return {provider.storage_->reader.FromTypeDescriptor(descriptor).type,&provider};
+}
 RuntimeType RuntimeMetadata::FieldType(RuntimeField field) {
     DeclaringType(field);return {storage_->reader.FieldType(field.metadata_).type,this};
 }

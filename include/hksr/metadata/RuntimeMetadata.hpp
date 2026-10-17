@@ -24,6 +24,7 @@ public:
     friend bool operator!=(RuntimeType a,RuntimeType b) noexcept { return !(a==b); }
 private:
     friend class RuntimeMetadata;
+    friend class native::MetadataProvider;
     RuntimeType(void* klass, const RuntimeMetadata* provider) : klass_(klass), provider_(provider) {}
     void* klass_ = nullptr;
     const RuntimeMetadata* provider_ = nullptr;
@@ -53,6 +54,14 @@ struct RuntimeFieldObservation {
 };
 struct RuntimeFields {
     std::vector<RuntimeFieldObservation> fields;
+    std::string iteration_error;
+};
+struct RuntimeMethodObservation {
+    DeclaredMethod declaration;
+    std::string error;
+};
+struct RuntimeMethods {
+    std::vector<RuntimeMethodObservation> methods;
     std::string iteration_error;
 };
 // Current-domain instance declarations, including constructed generic types.
@@ -107,6 +116,8 @@ public:
     // retain constructed generic owners and hidden same-name members. Partial
     // failures stay attached to the corresponding observation.
     RuntimeFields ObserveFields(RuntimeType type);
+    RuntimeMethods ObserveMethods(RuntimeType type);
+    RuntimeCodeEntries ReadCodeEntries(RuntimeType type) const;
     RuntimeType FieldType(RuntimeField field);
     RuntimeType DeclaringType(RuntimeField field) const;
     RuntimeVersion Version() const;
