@@ -9,6 +9,7 @@ using namespace hksr::api;
 int world_storage, entity_storage, method_info;
 volatile unsigned create_calls=0, dispose_calls=0;
 bool fail_dispose=false;
+std::function<void()> inside_dispose;
 auto* world=reinterpret_cast<GameWorld*>(&world_storage);
 auto* entity=reinterpret_cast<GameEntity*>(&entity_storage);
 void Check(bool value){if(!value)throw std::runtime_error("native lifecycle hook test failed");}
@@ -20,6 +21,7 @@ __declspec(noinline) GameEntity* __fastcall NativeCreate(GameWorld* w,int team,i
 __declspec(noinline) void __fastcall NativeDispose(GameEntity* e,void* metadata){
     Check(e==entity && metadata==&method_info);
     ++dispose_calls;
+    if(inside_dispose)inside_dispose();
     if(fail_dispose)RaiseException(0xE0434343,0,0,nullptr);
 }
 bool TryDispose(){
@@ -35,6 +37,11 @@ void TestLifecycleHooks(){
     InstallEntityLifecycleHooks(resolver);
     auto& tracked=TrackedEntities();
     const auto token=tracked.Track(entity);
+    unsigned observed=0;
+    tracked.BeforeDispose(token,[&](auto current){Check(current.generation==token.generation && dispose_calls==0);++observed;});
+    tracked.BeforeDispose(token,[](auto){throw std::runtime_error("observer failure must not suppress original");});
+    tracked.BeforeDispose(token,[](auto){RaiseException(0xE0670003,0,0,nullptr);});
+    inside_dispose=[&]{Check(observed==1 && tracked.IsRetiring(token) && !tracked.IsDisposed(token));};
     {
         EntityCreationScope receipt(world);
         Check(NativeCreate(world,4,4,&method_info)==entity);
@@ -44,6 +51,7 @@ void TestLifecycleHooks(){
     Check(dispose_calls==1 && !tracked.IsDisposed(token));
     fail_dispose=false;Check(TryDispose());
     Check(dispose_calls==2 && tracked.IsDisposed(token));
+    Check(observed==1);inside_dispose={};
     tracked.Forget(token);
     RemoveEntityLifecycleHooksAtQuiescentPoint();
     {

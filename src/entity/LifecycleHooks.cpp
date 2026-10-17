@@ -3,6 +3,7 @@
 #include "../platform/NativeHooks.hpp"
 #include <stdexcept>
 #include <string>
+#include <Windows.h>
 
 namespace hksr::sdk_v1 {
 namespace {
@@ -18,6 +19,10 @@ GameEntity* __fastcall CreateEmpty(GameWorld* world, int team, int type, void* m
 void __fastcall Dispose(GameEntity* entity, void* metadata) {
     const auto token = entities.Current(entity);
     auto original = reinterpret_cast<void(__fastcall*)(GameEntity*,void*)>(hooks.Original(1));
+    try {
+        const auto notice=entities.DisposalStarting(token);
+        if(notice.failed || notice.wrong_thread)OutputDebugStringA("HKSR: entity pre-disposal observer failed or ran on a different thread; forwarding original Dispose.\n");
+    }catch(...) {OutputDebugStringA("HKSR: entity pre-disposal dispatch failed; forwarding original Dispose.\n");}
     original(entity, metadata);
     // No catch of the original: a failed Dispose is not completed disposal.
     entities.Disposed(token);

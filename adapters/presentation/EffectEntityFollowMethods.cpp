@@ -2,6 +2,20 @@
 #include <stdexcept>
 
 namespace hksr::sdk_v1 {
+EffectMotionTargetBinding ResolveEffectMotionTarget460(MethodResolver& metadata,const std::vector<DeclaredField>& fields) {
+    auto field=[&](const char* name,const char* type) {
+        const DeclaredField* found=nullptr;
+        for(const auto& row:fields)if(row.name==name) {
+            if(found || row.type!=type || !row.flags_observed || (row.flags&0x10))
+                throw std::invalid_argument(std::string("effect motion target field differs: ")+name);
+            found=&row;
+        }
+        if(!found)throw std::invalid_argument(std::string("effect motion target field absent: ")+name);
+        return found->offset;
+    };
+    return {metadata.Resolve("RPG.GameCore","GameEntity","GetComponent","RPG.GameCore.GameComponentBase",{"System.Type"}),
+        field("_OwnerRef","RPG.GameCore.GameEntity"),field("<IsAttachMotionWithEffect>k__BackingField","System.Boolean")};
+}
 EffectEntityFollowMethods ResolveEffectEntityFollow460(MethodResolver& metadata) {
     EffectEntityFollowMethods out;
     auto get=[&](const char* ns,const char* type,const char* name,const char* result,

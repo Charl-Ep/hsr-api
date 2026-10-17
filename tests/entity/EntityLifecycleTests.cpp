@@ -117,5 +117,36 @@ void TestEntityLifecycle() {
     lifecycle.Disposed(first_token); lifecycle.Forget(first_token);
     Check(!lifecycle.IsDisposed(reused) && lifecycle.Current(A).generation == reused.generation);
     lifecycle.Disposed(reused); Check(lifecycle.IsDisposed(reused));
+    lifecycle.Forget(reused);
+    const auto watched=lifecycle.Track(A),other=lifecycle.Track(B);
+    int calls=0;
+    EntityDisposalSubscription second_observer=0;
+    lifecycle.BeforeDispose(watched,[&](auto token){
+        Check(token.entity==A && token.generation==watched.generation && lifecycle.IsRetiring(token) && !lifecycle.IsDisposed(token));
+        ++calls;lifecycle.CancelBeforeDispose(second_observer);
+        Check(lifecycle.DisposalStarting(token).invoked==0);
+        Check(lifecycle.DisposalStarting(other).invoked==1);
+    });
+    second_observer=lifecycle.BeforeDispose(watched,[&](auto){calls+=100;});
+    lifecycle.BeforeDispose(watched,[&](auto){++calls;throw std::runtime_error("one listener failed");});
+    lifecycle.BeforeDispose(watched,[&](auto){++calls;});
+    lifecycle.BeforeDispose(other,[&](auto token){Check(token.entity==B);++calls;});
+    Check(lifecycle.DisposalStarting(reused).invoked==0 && !lifecycle.IsRetiring(watched));
+    const auto notice=lifecycle.DisposalStarting(watched);
+    Check(notice.invoked==3 && notice.failed==1 && notice.wrong_thread==0 && calls==4);
+    bool late=false;try{lifecycle.BeforeDispose(watched,[](auto){});}catch(const std::logic_error&){late=true;}
+    Check(late && lifecycle.DisposalStarting(watched).invoked==0);
+    lifecycle.Forget(watched);lifecycle.Forget(other);
+    const auto foreign_thread=lifecycle.Track(A);
+    lifecycle.BeforeDispose(foreign_thread,[&](auto){++calls;});
+    EntityDisposalNotice wrong;
+    std::thread disposing([&]{wrong=lifecycle.DisposalStarting(foreign_thread);});disposing.join();
+    Check(wrong.invoked==0 && wrong.wrong_thread==1 && calls==4);
+    lifecycle.Forget(foreign_thread);
+    const auto forgotten=lifecycle.Track(A);
+    lifecycle.BeforeDispose(forgotten,[&](auto){++calls;});lifecycle.Forget(forgotten);
+    const auto replacement=lifecycle.Track(A);
+    Check(lifecycle.DisposalStarting(replacement).invoked==0 && calls==4);
+    lifecycle.Forget(replacement);
     std::cout << "Entity receipts/ownership tests passed.\n";
 }

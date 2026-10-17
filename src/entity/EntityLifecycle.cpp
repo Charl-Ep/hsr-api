@@ -3,7 +3,10 @@
 #include <atomic>
 #include <map>
 #include <mutex>
+#include <memory>
 #include <stdexcept>
+#include <thread>
+#include <Windows.h>
 
 namespace hksr::sdk_v1 {
 namespace {
@@ -85,9 +88,24 @@ void EntityCreationScope::DisposalCompleted(GameEntity* entity) noexcept {
 }
 
 struct EntityLifecycle::State {
-    struct Entry { std::uint64_t generation; bool disposed; const void* owner; };
+    struct Observer {
+        EntityToken token;std::thread::id thread;std::function<void(EntityToken)> callback;
+        std::atomic<bool> active{true};
+        Observer(EntityToken t,std::function<void(EntityToken)> cb)
+            :token(t),thread(std::this_thread::get_id()),callback(std::move(cb)){}
+    };
+    struct Entry { std::uint64_t generation; bool disposed; const void* owner; bool retiring=false; };
     mutable std::mutex mutex;
     std::map<GameEntity*, Entry> entries;
+    std::map<EntityDisposalSubscription,std::shared_ptr<Observer>> observers;
+    EntityDisposalSubscription next=0;
+    static bool InvokeCpp(Observer* observer) noexcept {
+        try{observer->callback(observer->token);return true;}catch(...){return false;}
+    }
+    static bool Invoke(Observer* observer) noexcept {
+        __try{return InvokeCpp(observer);}
+        __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+    }
 };
 EntityLifecycle::EntityLifecycle() : state_(new State) {}
 EntityLifecycle::~EntityLifecycle() { delete state_; }
@@ -115,6 +133,49 @@ EntityToken EntityLifecycle::Current(GameEntity* entity) const {
     const auto found = state_->entries.find(entity);
     return found == state_->entries.end() ? EntityToken{} : EntityToken{entity, found->second.generation};
 }
+EntityDisposalSubscription EntityLifecycle::BeforeDispose(EntityToken token,std::function<void(EntityToken)> callback) {
+    if(!callback)throw std::invalid_argument("entity disposal callback absent");
+    auto observer=std::make_shared<State::Observer>(token,std::move(callback));
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    const auto found=state_->entries.find(token.entity);
+    if(found==state_->entries.end() || found->second.generation!=token.generation || found->second.disposed || found->second.retiring)
+        throw std::logic_error("entity disposal observation requires a live tracked generation");
+    const auto id=++state_->next;state_->observers.emplace(id,std::move(observer));return id;
+}
+void EntityLifecycle::CancelBeforeDispose(EntityDisposalSubscription id) {
+    std::shared_ptr<State::Observer> removed;
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    const auto found=state_->observers.find(id);
+    if(found==state_->observers.end())return;
+    found->second->active=false;removed=std::move(found->second);state_->observers.erase(found);
+}
+EntityDisposalNotice EntityLifecycle::DisposalStarting(EntityToken token) {
+    EntityDisposalNotice result;
+    std::vector<std::pair<EntityDisposalSubscription,std::shared_ptr<State::Observer>>> callbacks;
+    {
+        std::lock_guard<std::mutex> lock(state_->mutex);
+        const auto found=state_->entries.find(token.entity);
+        if(found==state_->entries.end() || found->second.generation!=token.generation || found->second.disposed || found->second.retiring)return result;
+        for(const auto& [id,observer]:state_->observers)
+            if(observer->token.entity==token.entity && observer->token.generation==token.generation)callbacks.emplace_back(id,observer);
+        found->second.retiring=true;
+    }
+    // No registry lock across callbacks. A callback can cancel another
+    // subscription or retire a different target without deadlocking.
+    for(const auto& [id,observer]:callbacks) {
+        if(observer->active.exchange(false)) {
+            if(observer->thread!=std::this_thread::get_id())++result.wrong_thread;
+            else {++result.invoked;if(!State::Invoke(observer.get()))++result.failed;}
+        }
+        CancelBeforeDispose(id);
+    }
+    return result;
+}
+bool EntityLifecycle::IsRetiring(EntityToken token) const {
+    std::lock_guard<std::mutex> lock(state_->mutex);
+    const auto found=state_->entries.find(token.entity);
+    return found!=state_->entries.end() && found->second.generation==token.generation && found->second.retiring;
+}
 void EntityLifecycle::Disposed(EntityToken token) {
     std::lock_guard<std::mutex> lock(state_->mutex);
     const auto found = state_->entries.find(token.entity);
@@ -126,8 +187,16 @@ bool EntityLifecycle::IsDisposed(EntityToken token) const {
     return found != state_->entries.end() && found->second.generation == token.generation && found->second.disposed;
 }
 void EntityLifecycle::Forget(EntityToken token) {
+    std::vector<std::shared_ptr<State::Observer>> removed;
     std::lock_guard<std::mutex> lock(state_->mutex);
     const auto found = state_->entries.find(token.entity);
-    if (found != state_->entries.end() && found->second.generation == token.generation) state_->entries.erase(found);
+    if (found != state_->entries.end() && found->second.generation == token.generation) {
+        state_->entries.erase(found);
+        for(auto it=state_->observers.begin();it!=state_->observers.end();) {
+            if(it->second->token.entity==token.entity && it->second->token.generation==token.generation) {
+                it->second->active=false;removed.push_back(std::move(it->second));it=state_->observers.erase(it);
+            }else ++it;
+        }
+    }
 }
 }

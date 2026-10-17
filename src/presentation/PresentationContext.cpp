@@ -380,7 +380,8 @@ std::unique_ptr<EffectEntityFollow> PresentationContext::CreateEffectEntityFollo
     for(const auto& error:methods.binding_errors)s->Log("effect follow binding: "+error);
     for(const auto& error:list.binding_errors)s->Log("effect follow list: "+error);
     return std::make_unique<EffectEntityFollow>(*s->effect_access,std::move(methods),fields,s->bindings.references,
-        s->objects,s->resources.Arrays(),ManagedReferenceList(std::move(list)));
+        s->objects,s->resources.Arrays(),ManagedReferenceList(std::move(list)),
+        ResolveEffectMotionTarget460(metadata,metadata.ReadFields("","BGOBCKLPEMK")));
 }
 std::unique_ptr<OwnedTimeline> PresentationContext::CreateTimeline(EntityToken token,GameWorld* world) const {
     const auto s=storage_->state;

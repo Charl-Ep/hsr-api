@@ -61,8 +61,12 @@ private:
     State* state_;
 };
 
-// Product state, independent of capture enablement. No engine API is invoked
-// here. Disposal is published after the original call completes, not at entry.
+struct EntityDisposalNotice {unsigned invoked=0,failed=0,wrong_thread=0;};
+using EntityDisposalSubscription=std::uint64_t;
+// Product state, independent of capture enablement. Completed disposal is
+// published only after the original returns. Before-disposal observers run
+// synchronously at entry, while components still exist, on their registering
+// thread. They must not dispose this entity or prevent the original call.
 class HKSR_API EntityLifecycle {
 public:
     EntityLifecycle();
@@ -73,6 +77,12 @@ public:
     bool IsOwnedBy(GameEntity* entity,const void* owner) const;
     EntityToken OwnedToken(GameEntity* entity,const void* owner) const;
     EntityToken Current(GameEntity* entity) const;
+    EntityDisposalSubscription BeforeDispose(EntityToken,std::function<void(EntityToken)>);
+    void CancelBeforeDispose(EntityDisposalSubscription);
+    // Hook boundary: one notification per lifetime, even if Dispose throws.
+    // Callbacks are isolated; failure counts do not veto engine disposal.
+    EntityDisposalNotice DisposalStarting(EntityToken);
+    bool IsRetiring(EntityToken) const;
     void Disposed(EntityToken token);
     bool IsDisposed(EntityToken token) const;
     void Forget(EntityToken token);

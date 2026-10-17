@@ -21,6 +21,9 @@ Plugin one_plugin{nullptr,&one_behavior},two_plugin{nullptr,&two_behavior};
 Effect one{nullptr,&one_plugin},two{nullptr,&two_plugin};
 Request first{10,false,&one},second{20,false,&two};
 int info,plugin_type,entity_type,target1,target2;
+int movement_type;
+struct Movement {void* owner;bool attached;};
+Movement movement{&target1,false};
 int serial=0,binds=0,clears=0,allocations=0;
 bool absent=false,foreign_behavior=false,fault=false,no_bind=false;
 std::map<int,void*> roots;
@@ -41,6 +44,9 @@ void* __fastcall Component(void* value,void* type,void*) {
 }
 void* __fastcall GetBehavior(void* value,void*){Check(Kept(value));return static_cast<Plugin*>(value)->behavior;}
 void* __fastcall GetOwner(void* value,void*){Check(Kept(value));return foreign_behavior?&two_plugin:static_cast<Behavior*>(value)->owner;}
+void* __fastcall MovementComponent(void* value,void* type,void*) {
+    Check(Kept(value) && Kept(type) && type==&movement_type);return absent?nullptr:&movement;
+}
 int __fastcall Count(void* value,void*){Check(Kept(value));return static_cast<int>(static_cast<List*>(value)->items.size());}
 void* __fastcall Item(void* value,int index,void*){Check(Kept(value));return static_cast<List*>(value)->items.at(index);}
 void* __fastcall CreateArray(void* type,int count,void*) {
@@ -62,6 +68,7 @@ struct Objects:ManagedObjects {
     ObjectResult NewStringUtf8(const char*)override{throw std::runtime_error("unexpected string allocation");}
     ObjectResult AllocateObject(const char*,const char*)override{throw std::runtime_error("unexpected task allocation");}
     ObjectResult ManagedType(const char* ns,const char* type)override {
+        if(std::string(type)=="BGOBCKLPEMK"){Check(std::string(ns).empty());return {{true,0},&movement_type};}
         const bool plugin=std::string(type)=="MonoEffectPluginEntityFollowEffect";
         Check(plugin?std::string(ns)=="RPG.Client":std::string(ns)=="RPG.GameCore" && std::string(type)=="GameEntity");
         return {{true,0},plugin?&plugin_type:&entity_type};
@@ -72,6 +79,7 @@ void TestEffectEntityFollow() {
     one.request=&first;two.request=&second;one_plugin.owner=&one;two_plugin.owner=&two;
     one_behavior.owner=&one_plugin;two_behavior.owner=&two_plugin;
     MetadataResolver metadata({
+        {"RPG.GameCore","GameEntity",{{"GetComponent","RPG.GameCore.GameComponentBase",{"System.Type"},false,M(MovementComponent)}}},
         {"UnityEngine","Component",{{"GetComponent","UnityEngine.Component",{"System.Type"},false,M(Component)}}},
         {"UnityEngine","Object",{{"op_Implicit","System.Boolean",{"UnityEngine.Object"},true,M(Alive)}}},
         {"RPG.Client","MonoEffectPluginEntityFollowEffect",{{"get_Behavior","GIMGIMFGBFF",{},false,M(GetBehavior)}}},
@@ -88,7 +96,14 @@ void TestEffectEntityFollow() {
     ReferenceListMethods lm;lm.count=M(Count);lm.item=M(Item);
     const ReferenceMethods refs{M(Retain),M(Target),M(Free),{}, {}};
     Objects objects;
-    EffectEntityFollow follow(EffectAccess(am),methods,fields,refs,objects,ManagedArrays(ar),ManagedReferenceList(lm));
+    const auto target_binding=ResolveEffectMotionTarget460(metadata,{
+        {"RPG.GameCore","GameComponentBase","_OwnerRef","RPG.GameCore.GameEntity",offsetof(Movement,owner),6,true},
+        {"","BGOBCKLPEMK","<IsAttachMotionWithEffect>k__BackingField","System.Boolean",offsetof(Movement,attached),1,true}});
+    EffectEntityFollow follow(EffectAccess(am),methods,fields,refs,objects,ManagedArrays(ar),ManagedReferenceList(lm),target_binding);
+    Check(follow.ReadTarget(&target1).result.state==EffectControlState::Applied && !follow.ReadTarget(&target1).attached);
+    movement.attached=true;Check(follow.ReadTarget(&target1).attached);movement.attached=false;
+    Check(follow.ReadTarget(&target2).result.state==EffectControlState::Failed);
+    absent=true;Check(follow.ReadTarget(&target1).result.state==EffectControlState::Unsupported);absent=false;
     const EffectReference a{10,0,&first},b{20,0,&second};
     Check(follow.Read(a).result.state==EffectControlState::Applied && allocations==0);
     Check(follow.Set(a,{}, {&target1,&target2}).result.state==EffectControlState::Applied);
@@ -118,6 +133,10 @@ void TestEffectEntityFollow() {
     on_array=[] {one_behavior.owner=&two_plugin;};
     Check(follow.Set(a,{}, {&target1}).result.state==EffectControlState::Failed && binds==calls);
     on_array={};one_behavior.owner=&one_plugin;
+    bool current=true;
+    on_array=[&]{current=false;};
+    Check(follow.Set(a,{}, {&target1},[&]{return current;}).result.state==EffectControlState::Failed && binds==calls);
+    on_array={};
     no_bind=true;Check(follow.Set(a,{}, {&target1}).result.state==EffectControlState::Failed);no_bind=false;
     fault=true;const auto failed=follow.Set(a,{}, {&target1});fault=false;
     Check(failed.result.state==EffectControlState::Failed && failed.result.call.exception==0xE0670002 && failed.result.references_released);

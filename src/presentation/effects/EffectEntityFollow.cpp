@@ -10,12 +10,13 @@ namespace hksr::sdk_v1 {
 struct EffectEntityFollow::State {
     EffectAccess access;EffectEntityFollowMethods methods;EffectEntityFollowFields fields;
     ManagedObjects& objects;ManagedArrays arrays;ManagedReferenceList lists;ManagedRoots roots;
+    EffectMotionTargetBinding target_binding;
     std::vector<ManagedRootId> temporary,types;
-    void* plugin_type=nullptr;void* entity_type=nullptr;
+    void* plugin_type=nullptr;void* entity_type=nullptr;void* movement_type=nullptr;
     bool closed=false,busy=false;
     State(EffectAccess a,EffectEntityFollowMethods m,EffectEntityFollowFields f,ReferenceMethods refs,
-        ManagedObjects& o,ManagedArrays ar,ManagedReferenceList l)
-        :access(std::move(a)),methods(std::move(m)),fields(f),objects(o),arrays(std::move(ar)),lists(std::move(l)),roots(refs){}
+        ManagedObjects& o,ManagedArrays ar,ManagedReferenceList l,EffectMotionTargetBinding target)
+        :access(std::move(a)),methods(std::move(m)),fields(f),objects(o),arrays(std::move(ar)),lists(std::move(l)),roots(refs),target_binding(target){}
     void Keep(void* value,std::vector<ManagedRootId>& ids) {
         if(!value)throw std::runtime_error("follow reference absent");
         ids.reserve(ids.size()+1);ids.push_back(roots.Keep(value));
@@ -73,7 +74,8 @@ struct EffectEntityFollow::State {
         }
         return out;
     }
-    EffectEntityFollowObservation Apply(EffectReference ref,const std::vector<void*>* expected,const std::vector<void*>* desired) {
+    EffectEntityFollowObservation Apply(EffectReference ref,const std::vector<void*>* expected,const std::vector<void*>* desired,
+        const std::function<bool()>& still_current={}) {
         EffectEntityFollowObservation out;
         if(closed || busy || !ref.parameters){out.result.detail="follow service closed, reentered or request absent";return out;}
         // Copies survive callbacks that mutate the caller's program or input.
@@ -128,6 +130,7 @@ struct EffectEntityFollow::State {
                                 Field(plugin,fields.plugin_owner)!=effect || Field(behavior,fields.targets)==nullptr)
                                 throw std::runtime_error("follow relation changed during input preparation");
                             if(expected && Targets(behavior)!=before)throw std::runtime_error("follow targets changed during input preparation");
+                            if(still_current && !still_current())throw std::runtime_error("follow owner or target lifetime ended during input preparation");
                             if(change) {
                                 out.result.call=after.empty()?native::CallVoid(methods.clear,behavior):native::CallVoid(methods.bind,behavior,input);
                                 if(!out.result.call.returned)throw std::runtime_error("follow operation failed; binding may be partial");
@@ -148,10 +151,33 @@ struct EffectEntityFollow::State {
     }
 };
 EffectEntityFollow::EffectEntityFollow(EffectAccess a,EffectEntityFollowMethods m,EffectEntityFollowFields f,ReferenceMethods r,
-    ManagedObjects& o,ManagedArrays ar,ManagedReferenceList l):state_(new State(std::move(a),std::move(m),f,r,o,std::move(ar),std::move(l))){}
+    ManagedObjects& o,ManagedArrays ar,ManagedReferenceList l,EffectMotionTargetBinding target):state_(new State(std::move(a),std::move(m),f,r,o,std::move(ar),std::move(l),target)){}
 EffectEntityFollow::~EffectEntityFollow(){delete state_;}
 EffectEntityFollowObservation EffectEntityFollow::Read(EffectReference ref){return state_->Apply(ref,nullptr,nullptr);}
-EffectEntityFollowObservation EffectEntityFollow::Set(EffectReference ref,const std::vector<void*>& expected,const std::vector<void*>& targets){return state_->Apply(ref,&expected,&targets);}
-bool EffectEntityFollow::Close(){auto& s=*state_;if(s.busy)return false;s.closed=true;s.plugin_type=nullptr;s.entity_type=nullptr;
+EffectMotionTargetObservation EffectEntityFollow::ReadTarget(void* entity) {
+    auto& s=*state_;EffectMotionTargetObservation out;
+    if(s.closed || s.busy || !entity){out.result.detail="effect motion target service closed, reentered or entity absent";return out;}
+    if(!s.target_binding.component.code){out.result.state=EffectControlState::Unsupported;out.result.detail="effect motion target binding absent";return out;}
+    s.busy=true;struct Exit{bool& flag;~Exit(){flag=false;}} exit{s.busy};
+    try {
+        s.Keep(entity,s.temporary);void* component=nullptr;
+        auto* type=s.Type(s.movement_type,"","BGOBCKLPEMK");
+        if(!native::Call(s.target_binding.component,&component,entity,type).returned)
+            throw std::runtime_error("effect motion component lookup failed");
+        if(!component){out.result.state=EffectControlState::Unsupported;out.result.detail="target has no effect movement component";}
+        else {
+            s.Keep(component,s.temporary);
+            if(s.Field(component,s.target_binding.owner)!=entity)throw std::runtime_error("effect motion component owner changed");
+            unsigned char attached=0;
+            if(!native::CopyMemoryChecked(&attached,static_cast<unsigned char*>(component)+s.target_binding.attached,1))
+                throw std::runtime_error("effect motion flag unreadable");
+            out.attached=attached!=0;out.result.state=EffectControlState::Applied;
+        }
+    }catch(const std::exception& e){out.result.detail=e.what();}
+    out.result.references_released=s.Release(s.temporary);return out;
+}
+EffectEntityFollowObservation EffectEntityFollow::Set(EffectReference ref,const std::vector<void*>& expected,const std::vector<void*>& targets,
+    std::function<bool()> current){return state_->Apply(ref,&expected,&targets,current);}
+bool EffectEntityFollow::Close(){auto& s=*state_;if(s.busy)return false;s.closed=true;s.plugin_type=nullptr;s.entity_type=nullptr;s.movement_type=nullptr;
     const bool a=s.Release(s.temporary),b=s.Release(s.types);return a && b;}
 }

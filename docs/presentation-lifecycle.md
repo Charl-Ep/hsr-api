@@ -56,6 +56,10 @@ Story creation requests the official asynchronous model-loading path. Factory re
 
 `context.EntityEvents()(session, world)` supplements the loaded model's events. Story actors use the performance-event list as their factory baseline. Keep the supplement alive and service it before retiring the entity.
 
+`TrackedEntities().BeforeDispose(token, callback)` registers a one-shot notification at the existing entity-disposal entry, before components are destroyed. Register and cancel on the owning engine thread; disconnect subscriptions before releasing callback targets. The callback must not dispose that entity. Exceptions are isolated and do not suppress the original call or other subscribers. Wrong-thread notifications are reported and not invoked.
+
+`IsRetiring(token)` becomes true at this boundary, including when the original disposal later fails. `IsDisposed(token)` becomes true only after normal return. A stale or retiring generation cannot accept a new disposal subscription. `Forget` removes remaining subscriptions for that generation.
+
 ## Event construction observations
 
 Prepare `CreateEventConstructionObserver` before model creation and activate it on the owner thread. It shares the construction hook with `AnimationEventPolicy`; `before` receives the final inputs after all active policies. Baseline and inline events may have null registration and file references.
@@ -131,6 +135,8 @@ See [animation inputs](animation.md) and the [C++ ownership contract](cpp-interf
 `context.CreateEffectEntityFollow()` creates an engine-thread adapter for `MonoEffectPluginEntityFollowEffect`. `Read(reference)` reports its current target identities. `Set(reference, expected_targets, desired_targets)` changes the binding only when the observed list matches the expected list. An empty desired list invokes the official unbind operation; an unchanged list performs no write or allocation.
 
 Targets are explicit managed `GameEntity` references. The caller retains the request and target lifetimes, arbitrates competing motion owners, and clears the binding before retiring targets. The plugin performs animation-driven movement and removal of accumulated translation. The adapter does not load pending effects, select global targets, or advance animation.
+
+`ReadTarget(entity)` reads the existing movement component's attached-motion flag. The flag does not identify its owner. The optional `Set` predicate rechecks caller-owned lifetimes after managed input preparation, immediately before the native write; it must not mutate state.
 
 Call `Close()` to release the adapter's cached type references. It does not undo an active binding. A failed native call may have applied part of the change; use `Read` to inspect the actual list before deciding cleanup.
 
