@@ -16,7 +16,17 @@ struct EntityEffectOptions {
     std::optional<Position3> scale;
     bool attach_to_target=false,fade_in=true,simulate_immediately=false;
 };
+// Fixed world pose with no target entity or attachment. Caster remains the
+// resource mapping and ownership source; the effect may animate from this pose.
+struct SpatialEffectOptions {
+    Position3 position{};
+    Rotation4 rotation{};
+    std::string unique_name;
+    std::optional<Position3> scale;
+    bool fade_in=true,simulate_immediately=false;
+};
 using ConfigureEntityEffect=std::function<EffectInputResult(void*,void*,void*,void*,const EntityEffectOptions&)>;
+using ConfigureSpatialEffect=std::function<EffectInputResult(void*,void*,void*,const SpatialEffectOptions&)>;
 // Engine-thread configuration of fresh unsubmitted requests. Managed references
 // use FieldInfo.SetValue. Entity options write only qualified blittable fields
 // at their current declared offsets and use the official attachment setter.
@@ -30,7 +40,11 @@ public:
     EffectInputResult Configure(void* retained_parameters,void* retained_target,void* retained_completion);
     EffectInputResult ConfigureEntity(void* retained_parameters,void* retained_caster,
         void* retained_target,void* retained_completion,const EntityEffectOptions&);
+    EffectInputResult ConfigureSpatial(void* retained_parameters,void* retained_caster,
+        void* retained_completion,const SpatialEffectOptions&);
     bool Close();
-private:struct State;State* state_;
+private:
+    EffectInputResult ConfigureImpl(void*,void*,void*,void*,const EntityEffectOptions&,const SpatialEffectOptions*);
+    struct State;State* state_;
 };
 }

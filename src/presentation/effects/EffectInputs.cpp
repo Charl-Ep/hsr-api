@@ -14,6 +14,7 @@ struct EffectInputs::State {
     std::map<std::string,Field> fields;
     std::map<std::string,DeclaredField> entity_fields;
     Method attach;
+    bool spatial_prepared=false;
     bool closed=false;
     State(MethodResolver& m,ObjectMetadata& d,ManagedObjects& o,ReferenceMethods r):methods(m),metadata(d),objects(o),roots(r){}
     void* Keep(ObjectResult value) {
@@ -60,6 +61,27 @@ struct EffectInputs::State {
         auto method=methods.Resolve("RPG.Client","TriggerEffectParams","set_IsAttachToTargetEntity","System.Void",{"System.Boolean"});
         entity_fields=std::move(resolved);attach=method;
     }
+    void PrepareSpatial(void* parameters) {
+        PrepareEntity(parameters);
+        if(spatial_prepared)return;
+        const auto declared=metadata.ReadObjectFields(parameters);
+        auto resolved=entity_fields;
+        for(const auto& item:std::vector<std::pair<const char*,const char*>>{
+            {"InitPosition","System.Nullable<UnityEngine.Vector3>"},
+            {"AnchorPosition","System.Nullable<UnityEngine.Vector3>"},
+            {"InitRotation","System.Nullable<UnityEngine.Quaternion>"},
+            {"IgnorePrefabAttachPoint","System.Boolean"}}) {
+            const DeclaredField* field=nullptr;
+            for(const auto& value:declared)if(value.owner_namespace=="RPG.Client" && value.owner_name=="TriggerEffectParams" && value.name==item.first) {
+                if(field || value.type!=item.second || !value.flags_observed || (value.flags&0x10))
+                    throw std::runtime_error(std::string("spatial effect field differs: ")+item.first);
+                field=&value;
+            }
+            if(!field)throw std::runtime_error(std::string("spatial effect field absent: ")+item.first);
+            resolved.emplace(item.first,*field);
+        }
+        entity_fields=std::move(resolved);spatial_prepared=true;
+    }
     template<class T>void Scalar(void* parameters,const char* name,const T& value) {
         // Only audited blittable fields on a private, unsubmitted parameter
         // object. Managed reference writes always use FieldInfo.SetValue.
@@ -93,12 +115,29 @@ EffectInputResult EffectInputs::Configure(void* parameters,void* target,void* co
     return out;
 }
 EffectInputResult EffectInputs::ConfigureEntity(void* parameters,void* caster,void* target,void* completion,const EntityEffectOptions& options) {
+    if(!target)return {};
+    return ConfigureImpl(parameters,caster,target,completion,options,nullptr);
+}
+EffectInputResult EffectInputs::ConfigureSpatial(void* parameters,void* caster,void* completion,const SpatialEffectOptions& input) {
+    auto spatial=input;
+    const auto& r=spatial.rotation;
+    const double squared=double(r.x)*r.x+double(r.y)*r.y+double(r.z)*r.z+double(r.w)*r.w;
+    if(!std::isfinite(spatial.position.x) || !std::isfinite(spatial.position.y) || !std::isfinite(spatial.position.z) ||
+        !std::isfinite(squared) || squared==0)throw std::invalid_argument("invalid spatial effect pose");
+    const auto length=std::sqrt(squared);
+    spatial.rotation={float(r.x/length),float(r.y/length),float(r.z/length),float(r.w/length)};
+    EntityEffectOptions options;options.unique_name=spatial.unique_name;options.scale=spatial.scale;
+    options.fade_in=spatial.fade_in;options.simulate_immediately=spatial.simulate_immediately;
+    return ConfigureImpl(parameters,caster,nullptr,completion,options,&spatial);
+}
+EffectInputResult EffectInputs::ConfigureImpl(void* parameters,void* caster,void* target,void* completion,
+    const EntityEffectOptions& options,const SpatialEffectOptions* spatial) {
     auto& s=*state_;EffectInputResult out;
-    if(s.closed || !parameters || !caster || !target || !completion)return out;
+    if(s.closed || !parameters || !caster || !completion)return out;
     const auto finite=[](Position3 value){return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);};
     if(!finite(options.position_offset) || !finite(options.rotation_offset) || (options.scale && !finite(*options.scale)) ||
         options.unique_name.find('\0')!=std::string::npos)throw std::invalid_argument("invalid entity effect visual inputs");
-    s.PrepareEntity(parameters);
+    if(spatial)s.PrepareSpatial(parameters);else s.PrepareEntity(parameters);
     const auto caster_field=s.Get("TriggerEffectParams","CasterEntity",false);
     const auto target_field=s.Get("TriggerEffectParams","TargetEntity",false);
     const auto name_field=s.Get("TriggerEffectParams","UniqueEffectName",false);
@@ -114,7 +153,8 @@ EffectInputResult EffectInputs::ConfigureEntity(void* parameters,void* caster,vo
             // +12. Source vectors and parameter offsets are distinct contracts.
             struct NullableVector {Position3 value;std::uint8_t present;std::uint8_t padding[3]{};};
             static_assert(sizeof(NullableVector)==16 && offsetof(NullableVector,present)==12);
-            const NullableVector position{options.position_offset,1},rotation{options.rotation_offset,1};
+            const auto relative=static_cast<std::uint8_t>(!spatial);
+            const NullableVector position{options.position_offset,relative},rotation{options.rotation_offset,relative};
             const NullableVector scale{options.scale.value_or(Position3{}),static_cast<std::uint8_t>(options.scale.has_value())};
             s.Scalar(parameters,"PositionOffset",position);s.Scalar(parameters,"RotationOffset",rotation);s.Scalar(parameters,"CustomScale",scale);
             s.Scalar(parameters,"IsNeedFadeIn",static_cast<std::uint8_t>(options.fade_in));
@@ -123,6 +163,17 @@ EffectInputResult EffectInputs::ConfigureEntity(void* parameters,void* caster,vo
             // toward evaluator or corresponding completion processing implied.
             s.Scalar(parameters,"ParamEntityUsage",std::int32_t{1});
             s.Scalar(parameters,"TowardMaxPitchAngle",90.0f);
+            if(spatial) {
+                // The loader consumes InitPosition before ResetTransform uses
+                // AnchorPosition. Populate both, without a target/attachment.
+                const NullableVector world{spatial->position,1};
+                struct NullableRotation {Rotation4 value;std::uint8_t present;std::uint8_t padding[3]{};};
+                static_assert(sizeof(NullableRotation)==20 && offsetof(NullableRotation,present)==16);
+                const NullableRotation orientation{spatial->rotation,1};
+                s.Scalar(parameters,"InitPosition",world);s.Scalar(parameters,"AnchorPosition",world);
+                s.Scalar(parameters,"InitRotation",orientation);
+                s.Scalar(parameters,"IgnorePrefabAttachPoint",std::uint8_t{1});
+            }
             out.target=native::CallVoid(s.attach,parameters,options.attach_to_target);
         }
         if(out.target.returned)out.completion=s.Set(callback_field,parameters,completion);

@@ -13,9 +13,11 @@ int info,global_type,params_type,manager,other_manager,entity,callback;
 int global_field,target_field,callback_field,caster_field,name_field,other_target,serial=0,lookups=0;
 void* service=&manager;
 struct NullableVector {Position3 value{};std::uint8_t present=0,padding[3]{};};
+struct NullableRotation {Rotation4 value{};std::uint8_t present=0,padding[3]{};};
 struct Parameters {
     void* target=nullptr;void* completion=nullptr;void* caster=nullptr;void* name=nullptr;
     NullableVector offset,rotation,scale;std::uint8_t fade=0,simulate=0;std::int32_t usage=0;bool attached=false;float pitch=0;
+    NullableVector initial,anchor;NullableRotation orientation;std::uint8_t ignore_prefab=0;
 } parameters;
 std::map<int,void*> roots;std::vector<std::unique_ptr<std::string>> texts;
 bool fail_callback=false;
@@ -36,7 +38,7 @@ void* __fastcall Find(void* type,void* name,int flags,void* meta) {
 void* __fastcall Get(void* field,void* object,void* meta){Check(field==&global_field && !object && meta==&info);return service;}
 void __fastcall Set(void* field,void* object,void* value,int flags,void* binder,void* culture,void* meta) {
     Check(object==&parameters && !flags && !binder && !culture && meta==&info);
-    if(field==&target_field){Check(value==&entity || value==&other_target);parameters.target=value;}
+    if(field==&target_field){Check(!value || value==&entity || value==&other_target);parameters.target=value;}
     else if(field==&caster_field){Check(value==&entity);parameters.caster=value;}
     else if(field==&name_field){parameters.name=value;}
     else {Check(field==&callback_field && value==&callback);parameters.completion=value;
@@ -66,7 +68,11 @@ struct Inputs:MethodResolver,ObjectMetadata,ManagedObjects {
             field("IsNeedFadeIn","System.Boolean",offsetof(Parameters,fade)),
             field("ForceSimulateImmediately","System.Boolean",offsetof(Parameters,simulate)),
             field("ParamEntityUsage","RPG.GameCore.EffectParamEntityUsage",offsetof(Parameters,usage)),
-            field("TowardMaxPitchAngle","System.Single",offsetof(Parameters,pitch))};
+            field("TowardMaxPitchAngle","System.Single",offsetof(Parameters,pitch)),
+            field("InitPosition","System.Nullable<UnityEngine.Vector3>",offsetof(Parameters,initial)),
+            field("AnchorPosition","System.Nullable<UnityEngine.Vector3>",offsetof(Parameters,anchor)),
+            field("InitRotation","System.Nullable<UnityEngine.Quaternion>",offsetof(Parameters,orientation)),
+            field("IgnorePrefabAttachPoint","System.Boolean",offsetof(Parameters,ignore_prefab))};
     }
     ObjectResult NewStringUtf8(const char* value)override{texts.push_back(std::make_unique<std::string>(value));return {{true,0},texts.back().get()};}
     ObjectResult ManagedType(const char* ns,const char* name)override {
@@ -103,5 +109,20 @@ void TestEffectInputs() {
     options.position_offset.x=std::numeric_limits<float>::quiet_NaN();bool rejected=false;
     try{inputs.ConfigureEntity(&parameters,&entity,&other_target,&callback,options);}catch(const std::invalid_argument&){rejected=true;}
     Check(rejected && roots.size()==persistent_roots);
+    // A spatial request keeps the caster, but never makes it the target.
+    SpatialEffectOptions spatial;spatial.position={7,-2,59};spatial.rotation={0,2,0,0};
+    spatial.unique_name="world";spatial.fade_in=false;spatial.simulate_immediately=true;
+    const auto placed=inputs.ConfigureSpatial(&parameters,&entity,&callback,spatial);
+    Check(placed.target.returned && placed.completion.returned && !parameters.target && parameters.caster==&entity);
+    Check(parameters.initial.present && parameters.initial.value.z==59 && parameters.anchor.present && parameters.anchor.value.y==-2);
+    Check(parameters.orientation.present && parameters.orientation.value.y==1 && parameters.orientation.value.w==0);
+    Check(parameters.ignore_prefab && !parameters.attached && !parameters.offset.present && !parameters.rotation.present);
+    Check(!parameters.fade && parameters.simulate && !parameters.scale.present);
+    const auto spatial_roots=roots.size();fail_callback=true;
+    Check(!inputs.ConfigureSpatial(&parameters,&entity,&callback,spatial).completion.returned);fail_callback=false;
+    Check(roots.size()==spatial_roots);
+    spatial.rotation={0,0,0,0};rejected=false;
+    try{inputs.ConfigureSpatial(&parameters,&entity,&callback,spatial);}catch(const std::invalid_argument&){rejected=true;}
+    Check(rejected && roots.size()==spatial_roots);
     Check(inputs.Close() && roots.empty() && !inputs.Manager().call.returned);texts.clear();
 }

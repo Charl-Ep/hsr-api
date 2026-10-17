@@ -127,7 +127,11 @@ void OwnedEffectRequest::StartEntity(void* caster,void* target,void* path,const 
     const auto captured=options;
     StartImpl(caster,target,path,&captured);
 }
-void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const EntityEffectOptions* options) {
+void OwnedEffectRequest::StartSpatial(void* caster,void* path,const SpatialEffectOptions& options) {
+    const auto captured=options;
+    StartImpl(caster,nullptr,path,nullptr,&captured);
+}
+void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const EntityEffectOptions* options,const SpatialEffectOptions* spatial) {
     auto& s=*state_;auto& out=s.status;
     if(out.started)throw std::logic_error("effect request already started");
     out.started=true;
@@ -136,8 +140,10 @@ void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const En
     struct Exit{bool& busy;~Exit(){busy=false;}} exit{s.busy};
     try {
         if(options && !s.configure_entity)throw std::runtime_error("entity effect configuration unavailable");
+        if(spatial && !s.services.configure_spatial)throw std::runtime_error("spatial effect configuration unavailable");
         s.Keep(entity);s.Keep(path);
-        if(target!=entity)s.Keep(target);
+        if(target && target!=entity)s.Keep(target);
+        if(!target && !spatial)throw std::runtime_error("entity effect target is null");
         s.Trace("prepare manager/path begin");
         const auto service=s.services.manager();
         if(!service.call.returned || !service.object)throw std::runtime_error("current effect manager unavailable");
@@ -155,7 +161,8 @@ void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const En
             [signals=s.signals](api::EffectCompletionEvent event){signals->Receive(event);});
         const auto callback=s.callback->Create();
         if(!callback.call.returned || !callback.object)throw std::runtime_error("effect completion creation failed");
-        const auto configured=options?s.configure_entity(out.reference.parameters,entity,target,callback.object,*options):
+        const auto configured=spatial?s.services.configure_spatial(out.reference.parameters,entity,callback.object,*spatial):
+            options?s.configure_entity(out.reference.parameters,entity,target,callback.object,*options):
             s.services.configure(out.reference.parameters,entity,callback.object);
         s.Trace("configure target="+std::to_string(configured.target.returned)+" callback="+std::to_string(configured.completion.returned));
         if(!configured.target.returned || !configured.completion.returned)throw std::runtime_error("effect request configuration incomplete");

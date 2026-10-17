@@ -71,6 +71,36 @@ void Reset() {
 void TestOwnedEffectRequest() {
     Reset();
     {
+        auto services=Services();SpatialEffectOptions options;options.position={6,1,58};
+        bool observed=false,retired=false;
+        services.configure_spatial=[&](void* raw,void* caster,void* callback,const SpatialEffectOptions& pose) {
+            Check(caster==&entity && pose.position.x==6 && pose.position.z==58);
+            Check(std::none_of(roots.begin(),roots.end(),[](const auto& item){return !item.second;}));
+            auto* params=static_cast<Params*>(raw);params->target=nullptr;params->callback=callback;
+            return EffectInputResult{{true,0},{true,0}};
+        };
+        services.manager=[&]{options.position.x=100;return ObjectResult{{true,0},current_manager};};
+        services.observe_request=[&](EffectReference ref,void* owner){Check(ref.parameters==&first && owner==&entity);observed=true;};
+        services.retire_request=[&](EffectReference ref){Check(ref.parameters==&first);retired=true;};
+        PresentationEffects effects(services);auto request=effects.CreateRequest();expected_target=nullptr;sync=true;
+        request->StartSpatial(&entity,&path,options);
+        Check(request->Status().submitted && request->Status().loaded_completions==1 && observed && !retired && !first.target);
+        current_manager=&other_manager;request->Cancel();release_on_remove=true;request->Service();
+        Check(request->Status().closed && last_removed_manager==&manager && roots.empty() && retired);
+    }
+    Reset();
+    {
+        auto services=Services();services.configure_spatial=[](void*,void*,void*,const SpatialEffectOptions&){return EffectInputResult{{true,0},{false,7}};};
+        OwnedEffectRequest request(services);request.StartSpatial(&entity,&path,{});
+        Check(request.Status().closed && releases==1 && submits==0 && roots.empty());
+    }
+    Reset();
+    {
+        OwnedEffectRequest request(Services());request.StartSpatial(&entity,&path,{});
+        Check(request.Status().closed && !request.Status().submitted && releases==0 && roots.empty());
+    }
+    Reset();
+    {
         int attempts=0;EffectActionServices actions;
         actions.remove=[&](void* service,EffectReference ref,const EffectRemovalOptions& options){
             Check(service==&manager && ref.parameters==&first && options.fade && options.immediate_fade && options.unbind);

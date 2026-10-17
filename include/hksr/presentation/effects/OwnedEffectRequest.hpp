@@ -22,6 +22,7 @@ struct EffectRequestServices {
     // Independent official event registration; no framework polling of effect
     // lists and no global/path-wide deletion. Returns a prepared/attached owner.
     std::function<std::unique_ptr<api::EventRegistrationLease>(api::EntityToken,const std::string&,const std::vector<api::EffectRemovalSource>&)> exit_events;
+    ConfigureSpatialEffect configure_spatial;
 };
 struct EffectRequestStatus {
     api::EffectReference reference;
@@ -47,6 +48,7 @@ public:
     OwnedEffectRequest& operator=(const OwnedEffectRequest&)=delete;
     void Start(void* entity,void* path);
     void StartEntity(void* caster,void* target,void* path,const EntityEffectOptions&);
+    void StartSpatial(void* caster,void* path,const SpatialEffectOptions&);
     // Track a receipt captured at an official submission boundary. The caller
     // must establish ownership and retain both inputs through this call.
     // Does not submit again, alter inputs, or replace official callbacks.
@@ -60,7 +62,7 @@ public:
     void Service();
     const EffectRequestStatus& Status() const;
 private:
-    void StartImpl(void* caster,void* target,void* path,const EntityEffectOptions*);
+    void StartImpl(void* caster,void* target,void* path,const EntityEffectOptions*,const SpatialEffectOptions* = nullptr);
     struct State;State* state_;
 };
 }

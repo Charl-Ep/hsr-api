@@ -341,7 +341,10 @@ std::optional<EffectRequestServices> PresentationContext::Effects() const {
         [s](void* input,void* target,void* callback){return s->effect_inputs->Configure(input,target,callback);},s->trace,
         [s](EffectReference ref,void* entity){if(s->isolation)s->isolation->RememberRequest(ref,static_cast<GameEntity*>(entity));},
         [s](EffectReference ref){if(s->isolation)s->isolation->RetireRequest(ref);},
-        [s](EntityToken entity,const std::string& state,const std::vector<EffectRemovalSource>& sources){return s->ExitEvents(entity,state,sources);}};
+        [s](EntityToken entity,const std::string& state,const std::vector<EffectRemovalSource>& sources){return s->ExitEvents(entity,state,sources);},
+        [s](void* parameters,void* caster,void* callback,const SpatialEffectOptions& options) {
+            return s->effect_inputs->ConfigureSpatial(parameters,caster,callback,options);
+        }};
 }
 std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices() const {
     auto services=Effects();
