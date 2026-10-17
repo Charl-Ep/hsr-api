@@ -1,6 +1,7 @@
 #include <hksr/presentation/PresentationContext.hpp>
 #include <hksr/presentation/PresentationResources.hpp>
 #include <hksr/control/ActorControlSession.hpp>
+#include <hksr/control/PartnerControlSession.hpp>
 #include <hksr/animation/ActorAnimationSession.hpp>
 #include <hksr/entity/NpcCreationSession.hpp>
 #include <hksr/entity/EntityCreationSession.hpp>
@@ -46,6 +47,9 @@ public:
     const hksr::api::MeshAccess& Mesh() const {return context_->Resources().Mesh();}
     std::unique_ptr<hksr::api::NpcCreationSession> Npc() {return context_->Npcs()();}
     std::unique_ptr<hksr::api::EntityCreationSession> Partner() {return context_->Partners()();}
+    std::unique_ptr<hksr::api::PartnerControlSession> PartnerControls(hksr::api::EntityToken child,hksr::api::EntityToken parent,hksr::api::GameWorld* world) {
+        return context_->PartnerControls(child,parent,world);
+    }
     std::unique_ptr<hksr::api::ManagedRoots> ModelRoots() {return context_->Models()->CreateRoots();}
     std::unique_ptr<hksr::api::LookSupport> Look() {return context_->Models()->CreateLookSupport();}
     std::unique_ptr<hksr::api::MapNpcInputs> NpcInputs(std::uint32_t id) {

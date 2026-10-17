@@ -6,13 +6,13 @@ Public headers are under `include/hksr/<module>`. Implementations and tests use 
 |---|---|
 | `metadata`, `managed` | IL2CPP declarations, managed inputs and reference ownership |
 | `runtime`, `world` | Runtime clients, official frames, map identity and transforms |
-| `entity` | ClientCreateMapNPC inputs, entity generations and retirement |
+| `entity` | Map-NPC, story and partner creation, entity generations and retirement |
 | `model` | CharacterModelComponent, Art admission, baseline capture and model transitions |
 | `animation` | Animator and FreeStyle access, controller resources and source catalogs |
 | `presentation/events` | Event registrations, baseline supplements and private configuration projection |
 | `presentation/timeline` | Timeline graphs, registries, call scopes and ownership |
 | `presentation/effects` | Effect requests, completion and cleanup |
-| `control` | Placement, grounding, gaze and mouse mode |
+| `control` | Placement, grounding, gaze, partner relations and mouse mode |
 | `unity` | Components, meshes, materials, renderers and resource lifetimes |
 | `platform` | Native hook infrastructure |
 | `serialization` | Unity component-document encoding and reference remapping |

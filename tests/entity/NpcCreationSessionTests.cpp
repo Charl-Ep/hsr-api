@@ -14,7 +14,7 @@ static_assert(!std::is_copy_assignable_v<hksr::api::NpcCreationSession>);
 
 namespace {
 using namespace hksr::api;
-struct FakeEntity { bool loaded = false; std::uint32_t id = 42; } objects[2];
+struct FakeEntity { bool loaded = false; std::uint32_t id = 42; } objects[3];
 int world_data, manager_data, definition_data, row_data, metadata, type_data;
 GameWorld* world = reinterpret_cast<GameWorld*>(&world_data);
 auto* manager = reinterpret_cast<EntityManager*>(&manager_data);
@@ -31,6 +31,9 @@ std::map<int, void*> roots;
 void Check(bool ok) { if (!ok) throw std::runtime_error("NPC instance test failed"); }
 GameEntity* E(unsigned n = 0) { return reinterpret_cast<GameEntity*>(&objects[n]); }
 template<class F> Method M(F fn) { return {reinterpret_cast<void*>(fn), &metadata}; }
+__declspec(noinline) GameEntity* __fastcall Explicit(GameWorld* w,std::uint32_t id,int team,int kind,void* info) {
+    Check(w==world && id==77 && team==4 && kind==18 && info==&metadata);return E(2);
+}
 __declspec(noinline) GameEntity* __fastcall Empty(GameWorld* w, int team, int kind, void* info) {
     Check(w == world && team == 4 && (kind == 4 || kind==15) && info == &metadata);
     ++creations; return E(empty_index);
@@ -74,6 +77,7 @@ GameEntity* __fastcall Partner(EntityManager* m,GameEntity* parent,void* model,v
     Check(current_owner->Owns(child) && !unrelated_owner->Owns(child));
     if(factory_mode==1)RaiseException(0xE0510005,0,0,nullptr);
     if(factory_mode==3)Dispose(child,&metadata);
+    if(factory_mode==4){Explicit(world,77,4,18,&metadata);RaiseException(0xE0510006,0,0,nullptr);}
     return child;
 }
 std::uint32_t __fastcall Id(GameEntity* e, void* info) { Check(info == &metadata); ++reads; return reinterpret_cast<FakeEntity*>(e)->id; }
@@ -105,6 +109,7 @@ MetadataResolver Resolver() {
             {"set_KillImmediately", "System.Void", {"System.Boolean"}, false, M(Immediate)}}},
         {"RPG.GameCore", "GameWorld", {
             {"CreateEmptyEntity", "RPG.GameCore.GameEntity", {"RPG.GameCore.TeamType", "RPG.GameCore.EntityType"}, false, M(Empty)},
+            {"_CreateNewEntityImpl","RPG.GameCore.GameEntity",{"System.UInt32","RPG.GameCore.TeamType","RPG.GameCore.EntityType"},false,M(Explicit)},
             {"MakeEntityDie", "System.Void", {"RPG.GameCore.GameEntity", "RPG.GameCore.GameEntity"}, false, M(Kill)}}},
         {"RPG.GameCore", "EntityManager", {{"GetEntityByRuntimeID", "RPG.GameCore.GameEntity", {"System.UInt32"}, false, M(Lookup)}}},
         {"RPG.GameCore", "EntityManagerExtension", {{"ClientCreateMapNPC", "RPG.GameCore.GameEntity",
@@ -306,7 +311,7 @@ void TestNpcCreationSessions() {
             return std::make_unique<EntityCreationSession>(client,Method{},Method{},&provider,methods,references,
                 EntityCreationScope::BirthObserver{},partner_factory);
         };
-        for(unsigned mode=0;mode<4;++mode) {
+        for(unsigned mode=0;mode<5;++mode) {
             factory_mode=mode;auto child=make(owner);child->Create(source);
             Check(!child->IsStory());
             Check(child->Status().create_returned==(mode==0));
@@ -316,6 +321,7 @@ void TestNpcCreationSessions() {
                 Check(!child->Status().entities[0].observation.loaded.value);
                 child->Remove();
             }else if(mode==1)Check(child->Status().entities.size()==1 && child->Status().factory.call.exception==0xE0510005);
+            else if(mode==4)Check(child->Status().entities.size()==2 && child->Status().factory.call.exception==0xE0510006 && owner.Owns(E(2)));
             else Check(child->Status().entities.empty());
             child->Service(frame);
             Check(child->Status().closed && roots.size()==partner_base_roots && owner.Owns(E()));

@@ -20,6 +20,7 @@ struct ModelRequestServices;
 struct ControllerBindingServices;
 struct EffectRequestServices;
 class ActorControlSession;
+class PartnerControlSession;
 class ActorAnimationSession;
 class NpcCreationSession;
 class EntityCreationSession;
@@ -113,6 +114,7 @@ public:
     // Official auxiliary actors. Uses the same birth provenance and event
     // isolation as other owned entities, without Story/NPC initialization.
     EntityFactory Partners() const;
+    std::unique_ptr<PartnerControlSession> PartnerControls(EntityToken partner,EntityToken summoner,GameWorld*) const;
     using NpcInputFactory=std::function<std::unique_ptr<MapNpcInputs>(std::uint32_t,const char*,Position3,Rotation4)>;
     NpcInputFactory NpcInputs() const;
     using NpcEventFactory=std::function<std::unique_ptr<NpcEventSupplement>(NpcCreationSession&,GameWorld*)>;

@@ -29,6 +29,7 @@
 #include <hksr/presentation/events/NpcEventSupplement.hpp>
 #include <hksr/presentation/events/NpcEventBindings.hpp>
 #include <hksr/control/ActorControlSession.hpp>
+#include <hksr/control/PartnerControlSession.hpp>
 #include <hksr/control/ActorControlBindings.hpp>
 #include <hksr/control/MouseMode.hpp>
 #include <hksr/animation/OfficialCatalog.hpp>
@@ -266,6 +267,13 @@ PresentationContext::EntityFactory PresentationContext::Partners() const {
         return std::make_unique<EntityCreationSession>(s->owner,Method{},Method{},&s->objects,
             s->bindings.entity,s->bindings.references,observer,partner);
     };
+}
+std::unique_ptr<PartnerControlSession> PresentationContext::PartnerControls(EntityToken partner,EntityToken summoner,GameWorld* world) const {
+    auto& s=*storage_->state;
+    if(!s.metadata)throw std::logic_error("partner controls require a prepared runtime context");
+    auto methods=ResolvePartnerControl460(*s.metadata,s.metadata->ReadFields("RPG.GameCore","GameComponentBase",false),
+        s.metadata->ReadFields("","GDBHCNLLPAG",false));
+    return std::make_unique<PartnerControlSession>(s.owner,partner,summoner,world,methods,s.bindings.references,s.objects);
 }
 PresentationContext::NpcInputFactory PresentationContext::NpcInputs() const {
     if(!storage_->state->metadata)return {};

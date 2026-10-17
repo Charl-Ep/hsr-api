@@ -42,7 +42,7 @@ public:
     EntityCreationScope(const EntityCreationScope&) = delete;
     EntityCreationScope& operator=(const EntityCreationScope&) = delete;
     CreationReceipt Receipt() const;
-    // Exact identities already returned by CreateEmptyEntity in a live
+    // Exact identities already returned by an observed entity factory in a live
     // synchronous scope on this thread, before the outer factory returns.
     // This is a creation receipt, NOT permanent ownership or load completion.
     // Never dereferences entity; disposed receipts and unrelated entities fail.
@@ -51,7 +51,8 @@ public:
     // A lifetime identity already available INSIDE the factory. Track with
     // the same owner before this scope ends adopts this exact generation.
     static EntityToken OwnedToken(GameEntity* entity,const void* owner) noexcept;
-    // Adapter hook calls this only after CreateEmptyEntity returns normally.
+    // Adapter hooks call this only after native entity creation returns normally.
+    // Nested wrappers for the same live object produce one birth notification.
     static void FactoryCompleted(GameWorld* world, GameEntity* entity) noexcept;
     // A factory may create, then dispose, before returning/throwing. Preserve
     // that outcome even before the Framework can register the returned object.

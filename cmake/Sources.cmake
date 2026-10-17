@@ -10,6 +10,7 @@ set(HKSR_API_SOURCES
 
     # adapters/control
     adapters/control/ActorControlMethods.cpp
+    adapters/control/PartnerControlMethods.cpp
 
     # adapters/entity
     adapters/entity/EntityAccessMethods.cpp
@@ -67,6 +68,7 @@ set(HKSR_API_SOURCES
     # src/control
     src/control/ActorControl.cpp
     src/control/ActorControlSession.cpp
+    src/control/PartnerControlSession.cpp
     src/control/LookSupport.cpp
     src/control/MouseMode.cpp
 

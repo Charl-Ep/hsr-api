@@ -13,6 +13,7 @@ Call `PresentationContext::Create(metadata, capabilities, policy, trace)` from `
 | `Npcs()`, `NpcInputs()`, `NpcEvents()` | Creation, private input and event-supplement factories |
 | `Entities()`, `EntityEvents()` | Map-NPC or independent story-actor creation and event supplements |
 | `Partners()` | Auxiliary-actor creation factory for an owned summoner |
+| `PartnerControls(partner, summoner, world)` | Member naming, attachment, animation and visibility-follow commands |
 | `Animations()` | Per-entity animation session factory |
 | `Baselines()`, `ModelTransitions()` | Model capture and transition factories |
 | `Controls()`, `Player()` | Control-session factory and current-player resolver |
@@ -68,6 +69,12 @@ Story creation requests the official asynchronous model-loading path. Factory re
 Factory return does not imply model readiness. Continue `Service` while loading and retiring. A summoner that ends causes the session to request retirement of any remaining owned child; children already disposed by the engine are not removed twice. `Remove` retires the child, not its summoner. Keep servicing until `Status().closed`.
 
 This entry does not execute a summon task or configure member names, attachment, animation synchronization or visibility. The engine factory's notifications remain intact. Configure subsequent visual behavior separately.
+
+`PartnerControls` uses the created actor's official components. `SetMemberName` assigns its group name. `Attach` aligns two named model attach points and disables smooth following. `FollowAnimation` selects a synchronization target; an empty token clears it. `FollowVisibility` forwards the visibility relation; `None` or an empty target clears the relation. These operations do not advance animation or recalculate attachment transforms.
+
+Commands require current entities from the same client and world, with the partner belonging to the specified summoner. Results preserve individual native-call outcomes, including partial failures. `Close` releases adapter references; it does not destroy the actor or reverse its relations. Retire the actor through its creation session. The factory initializes its configured animation events; the NPC event supplement is not a Partner baseline reader.
+
+Creation receipts cover both `CreateEmptyEntity` and `_CreateNewEntityImpl`, including synchronous explicit-ID auxiliary entities. Nested returns of the same live object produce one birth. These scopes do not attribute unrelated asynchronous creations.
 
 ## Event construction observations
 

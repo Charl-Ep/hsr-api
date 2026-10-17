@@ -16,6 +16,14 @@ GameEntity* __fastcall CreateEmpty(GameWorld* world, int team, int type, void* m
     EntityCreationScope::FactoryCompleted(world, result);
     return result;
 }
+GameEntity* __fastcall CreateNew(GameWorld* world, std::uint32_t id, int team, int type, void* metadata) {
+    auto original=reinterpret_cast<GameEntity*(__fastcall*)(GameWorld*,std::uint32_t,int,int,void*)>(hooks.Original(2));
+    auto* result=original(world,id,team,type,metadata);
+    // Also covers explicit-ID auxiliary entities that bypass CreateEmptyEntity.
+    // Nested completion of the wrapper reuses this birth, not a second epoch.
+    EntityCreationScope::FactoryCompleted(world,result);
+    return result;
+}
 void __fastcall Dispose(GameEntity* entity, void* metadata) {
     const auto token = entities.Current(entity);
     auto original = reinterpret_cast<void(__fastcall*)(GameEntity*,void*)>(hooks.Original(1));
@@ -41,8 +49,11 @@ void InstallEntityLifecycleHooks(MethodResolver& resolver) {
     const auto create = batch.Resolve("RPG.GameCore","GameWorld","CreateEmptyEntity","RPG.GameCore.GameEntity",
         {"RPG.GameCore.TeamType","RPG.GameCore.EntityType"});
     const auto dispose = batch.Resolve("RPG.GameCore","GameEntity","Dispose","System.Void",{});
+    const auto create_new=batch.Resolve("RPG.GameCore","GameWorld","_CreateNewEntityImpl","RPG.GameCore.GameEntity",
+        {"System.UInt32","RPG.GameCore.TeamType","RPG.GameCore.EntityType"});
     batch.RequireComplete("entity lifecycle");
     hooks.Install({{"CreateEmptyEntity", create.code, reinterpret_cast<void*>(&CreateEmpty)},
-        {"GameEntity.Dispose", dispose.code, reinterpret_cast<void*>(&Dispose)}});
+        {"GameEntity.Dispose", dispose.code, reinterpret_cast<void*>(&Dispose)},
+        {"_CreateNewEntityImpl",create_new.code,reinterpret_cast<void*>(&CreateNew)}});
 }
 }
