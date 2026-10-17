@@ -14,10 +14,12 @@ struct EffectControlResult {
 struct EffectControlMethods {
     Method component,alive,progress_behavior,progress_owner,progress_set,animator_play,animator_cross_fade;
     std::vector<std::string> binding_errors;
+    Method animator_state_hash;
 };
 struct EffectControlServices {
     std::function<EffectControlResult(EffectReference,float,float)> progress;
     std::function<EffectControlResult(EffectReference,int,float,bool)> animator;
+    std::function<EffectControlResult(EffectReference,const std::string&,float,bool)> named_animator;
 };
 // Engine-thread operations on a retained request, including one already fading.
 // Never searches the global manager, forces a load, ticks a plugin, or queues a
@@ -35,6 +37,8 @@ public:
     // First Animator on the effect's GameObject, layer zero, as used by the
     // SetEffectAnimatorState task. Not the all-Animators behavior overload.
     EffectControlResult SetAnimatorState(EffectReference,int state_hash,
+        float normalized_transition_duration=0,bool restart=true);
+    EffectControlResult SetAnimatorState(EffectReference,const std::string& state,
         float normalized_transition_duration=0,bool restart=true);
     bool Close();
 private:

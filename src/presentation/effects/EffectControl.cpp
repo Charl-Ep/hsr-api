@@ -4,6 +4,7 @@
 #include <hksr/native/MetadataReader.hpp>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <stdexcept>
 
 namespace hksr::sdk_v1 {
@@ -24,6 +25,7 @@ struct EffectControl::State {
     EffectAccess access;EffectControlMethods methods;ManagedObjects& objects;ManagedRoots roots;
     std::size_t request_offset;
     std::vector<ManagedRootId> temporary,types;
+    std::map<std::string,int> state_hashes;
     void* animator_type=nullptr;void* progress_type=nullptr;
     bool closed=false,busy=false;
     State(EffectAccess a,EffectControlMethods m,ReferenceMethods refs,ManagedObjects& o,
@@ -69,13 +71,14 @@ struct EffectControl::State {
         if(!alive){out.state=EffectControlState::Ended;out.detail="Unity object destroyed";return false;}
         return true;
     }
-    EffectControlResult Apply(EffectReference ref,bool progress,int hash,float value,float duration,bool restart) {
+    EffectControlResult Apply(EffectReference ref,bool progress,int hash,float value,float duration,bool restart,const std::string* name=nullptr) {
         EffectControlResult out;
         if(closed || busy){out.detail=closed?"effect control closed":"effect control reentered";return out;}
-        if(!ref.parameters || !std::isfinite(value) || !std::isfinite(duration)) {out.detail="invalid effect control input";return out;}
+        if(!ref.parameters || !std::isfinite(value) || !std::isfinite(duration) ||
+            (name && (name->empty() || name->find('\0')!=std::string::npos))) {out.detail="invalid effect control input";return out;}
         busy=true;struct Exit{bool& flag;~Exit(){flag=false;}} exit{busy};
         try {
-            if(!methods.component.code || !methods.alive.code ||
+            if(!methods.component.code || !methods.alive.code || (name && !methods.animator_state_hash.code) ||
                 (progress?(!methods.progress_behavior.code || !methods.progress_owner.code || !methods.progress_set.code):
                     !(duration>0?methods.animator_cross_fade.code:methods.animator_play.code))) {
                 out.state=EffectControlState::Unsupported;out.detail="operation binding unavailable";
@@ -106,6 +109,17 @@ struct EffectControl::State {
                                         if(!ready)out.detail="progress behavior owner differs";
                                     }
                                 }
+                                if(ready && name) {
+                                    auto found=state_hashes.find(*name);
+                                    if(found==state_hashes.end()) {
+                                        const auto text=objects.NewStringUtf8(name->c_str());
+                                        if(!text.call.returned || !text.object)throw std::runtime_error("effect state string allocation failed");
+                                        Keep(text.object,temporary);
+                                        out.call=native::Call(methods.animator_state_hash,&hash,text.object);
+                                        if(!out.call.returned){ready=false;out.detail="effect state hash failed";}
+                                        else state_hashes.emplace(*name,hash);
+                                    }else hash=found->second;
+                                }
                                 // GC roots do not prevent pooling. Recheck the
                                 // request identity after all managed lookups.
                                 if(ready && Current(ref,effect,out)) {
@@ -132,6 +146,7 @@ EffectControl::EffectControl(EffectAccess a,EffectControlMethods m,ReferenceMeth
 EffectControl::~EffectControl(){delete state_;}
 EffectControlResult EffectControl::SetProgress(EffectReference r,float value,float duration){return state_->Apply(r,true,0,value,duration,false);}
 EffectControlResult EffectControl::SetAnimatorState(EffectReference r,int hash,float duration,bool restart){return state_->Apply(r,false,hash,0,duration,restart);}
+EffectControlResult EffectControl::SetAnimatorState(EffectReference r,const std::string& name,float duration,bool restart){return state_->Apply(r,false,0,0,duration,restart,&name);}
 bool EffectControl::Close(){auto& s=*state_;if(s.busy)return false;s.closed=true;s.animator_type=nullptr;s.progress_type=nullptr;
     const bool calls=s.Release(s.temporary),types=s.Release(s.types);return calls && types;}
 }

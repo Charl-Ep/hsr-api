@@ -350,6 +350,7 @@ std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices()
     EffectControlServices control;
     control.progress=[s](EffectReference ref,float value,float duration){return s->EffectControls().SetProgress(ref,value,duration);};
     control.animator=[s](EffectReference ref,int hash,float duration,bool restart){return s->EffectControls().SetAnimatorState(ref,hash,duration,restart);};
+    control.named_animator=[s](EffectReference ref,const std::string& name,float duration,bool restart){return s->EffectControls().SetAnimatorState(ref,name,duration,restart);};
     EffectActionServices actions;
     actions.trigger=[s](EffectReference ref,const std::string& name,bool reset){return s->EffectOperations().Trigger(ref,name,reset);};
     actions.remove=[s](void* manager,EffectReference ref,const EffectRemovalOptions& options){return s->EffectOperations().Remove(manager,ref,options);};

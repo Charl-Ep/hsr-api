@@ -124,6 +124,8 @@ Create an effect observer during preparation, then call its `ActivateOnCurrentTh
 
 `SetProgress(reference, value, seconds)` controls the loaded effect's progress plugin. `SetAnimatorState(reference, hash, duration, restart)` controls its first Animator on layer zero; duration is normalized transition time. Keep the request alive during either call. Neither operation loads a pending effect or searches by name. Results distinguish applied calls, pending loads, ended requests, unsupported components and failures. A fade request does not itself end control; parameter release or reuse does.
 
+The `SetAnimatorState(reference, std::string, duration, restart)` overload resolves the state with Unity's `Animator.StringToHash`, caches the result, and rechecks the request after managed input preparation. State-name resolution stays within the SDK.
+
 `SetAnimatorTrigger(reference, name, reset)` sets or resets a nonempty trigger on all child Animators, including inactive children. A pending effect returns `NotLoaded`.
 
 `OwnedEffectRequest::Cancel(EffectRemovalOptions)` accepts `fade`, `immediate_fade` and `unbind`. `Service` forwards them to the official effect manager with the retained request ID. Keep servicing until `closed`; accepted removal is not completed destruction. ID zero is rejected by both removal paths because the engine treats it as an unrestricted filter.

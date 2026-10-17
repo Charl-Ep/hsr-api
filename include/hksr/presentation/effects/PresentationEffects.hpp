@@ -33,6 +33,8 @@ public:
     EffectControlResult SetProgress(EffectReference,float progress,float transition_seconds=0) const;
     EffectControlResult SetAnimatorState(EffectReference,int state_hash,
         float normalized_transition_duration=0,bool restart=true) const;
+    EffectControlResult SetAnimatorState(EffectReference,const std::string& state,
+        float normalized_transition_duration=0,bool restart=true) const;
     EffectControlResult SetAnimatorTrigger(EffectReference,const std::string& name,bool reset=false) const;
 private:
     struct State;

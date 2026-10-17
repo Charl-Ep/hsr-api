@@ -17,6 +17,7 @@ EffectControlMethods ResolveEffectControl460(MethodResolver& metadata) {
     out.animator_play=get("UnityEngine","Animator","Play","System.Void",{"System.Int32","System.Int32","System.Single"});
     out.animator_cross_fade=get("UnityEngine","Animator","CrossFade","System.Void",
         {"System.Int32","System.Single","System.Int32","System.Single","System.Single"});
+    out.animator_state_hash=get("UnityEngine","Animator","StringToHash","System.Int32",{"System.String"},MethodKind::Static);
     return out;
 }
 }

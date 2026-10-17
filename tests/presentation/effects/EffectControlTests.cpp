@@ -12,6 +12,7 @@ struct Params {unsigned id=0;bool released=false;void* effect=nullptr;};
 struct Effect {void* request=nullptr;int animator=0,plugin=0,behavior=0;} first,second;
 Params a{0,false,&first},b{7,false,&second};
 int info,animator_type,plugin_type,serial=0,writes=0,queries=0,types=0;
+int state_text,hash_calls=0,string_calls=0;std::function<void()> on_hash;
 std::map<int,void*> roots;
 std::function<void()> on_component;
 void* mutated=nullptr;float actual_value=0,actual_duration=0,actual_start=0;
@@ -50,8 +51,9 @@ void __fastcall Play(void* receiver,int hash,int layer,float start,void* meta) {
 void __fastcall CrossFade(void* receiver,int hash,float duration,int layer,float start,float transition,void* meta) {
     Check(transition==0);actual_duration=duration;Play(receiver,hash,layer,start,meta);
 }
+int __fastcall StateHash(void* text,void*) {Check(text==&state_text && Kept(text));++hash_calls;if(on_hash)on_hash();return 123;}
 struct Objects:ManagedObjects {
-    ObjectResult NewStringUtf8(const char*)override{throw std::runtime_error("no strings needed");}
+    ObjectResult NewStringUtf8(const char* name)override{Check(std::string(name)=="Move" || std::string(name)=="Idle");++string_calls;return {{true,0},&state_text};}
     ObjectResult AllocateObject(const char*,const char*)override{throw std::runtime_error("no task allocation allowed");}
     ObjectResult ManagedType(const char* ns,const char* name)override {
         ++types;const bool animator=std::string(name)=="Animator";
@@ -71,7 +73,8 @@ void TestEffectControl() {
         {"","LMGBJIFBAAN",{{"HPNDIIPEFLJ","RPG.Client.MonoEffectPluginProgress",{},false,M(Owner)},
             {"EJDAKAECODE","System.Void",{"System.Single","System.Single"},false,M(Progress)}}},
         {"UnityEngine","Animator",{{"Play","System.Void",{"System.Int32","System.Int32","System.Single"},false,M(Play)},
-            {"CrossFade","System.Void",{"System.Int32","System.Single","System.Int32","System.Single","System.Single"},false,M(CrossFade)}}}});
+            {"CrossFade","System.Void",{"System.Int32","System.Single","System.Int32","System.Single","System.Single"},false,M(CrossFade)},
+            {"StringToHash","System.Int32",{"System.String"},true,M(StateHash)}}}});
     auto methods=ResolveEffectControl460(metadata);Check(methods.binding_errors.empty());
     EffectAccessMethods access;access.id=M(Id);access.released=M(Released);access.instance=M(Instance);
     // State/manager/load methods intentionally absent. They are not needed to
@@ -104,6 +107,13 @@ void TestEffectControl() {
     methods.progress_set={};EffectControl partial(EffectAccess(access),methods,refs,objects,fields);
     Check(partial.SetProgress(ra,1).state==EffectControlState::Unsupported);
     Check(partial.SetAnimatorState(ra,123).state==EffectControlState::Applied);
+    Check(control.SetAnimatorState(ra,std::string("Move"),0,false).state==EffectControlState::Applied);
+    Check(std::isinf(actual_start) && actual_start<0 && hash_calls==1 && string_calls==1);
+    Check(control.SetAnimatorState(rb,std::string("Move"),0.25f,true).state==EffectControlState::Applied);
+    Check(actual_start==0 && actual_duration==0.25f && hash_calls==1 && string_calls==1);
+    const auto before_hash=writes;on_hash=[] {++a.id;};
+    Check(control.SetAnimatorState(ra,std::string("Idle")).state==EffectControlState::Ended && writes==before_hash);
+    on_hash={};a.id=0;Check(control.SetAnimatorState(ra,std::string()).state==EffectControlState::Failed);
     Check(partial.Close());const auto old_queries=queries;
     Check(control.Close() && roots.empty());Check(control.SetProgress(ra,1).state==EffectControlState::Failed && queries==old_queries);
     std::cout<<"Effect control: request isolation, deferred loads, pool reuse, component ownership, native arguments and partial failure passed; no game playback.\n";
