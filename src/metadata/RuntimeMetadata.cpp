@@ -2,6 +2,7 @@
 #include "MetadataConnection.hpp"
 #include "MetadataTypeIndex.hpp"
 #include "MetadataCache.hpp"
+#include <hksr/native/MetadataProvider.hpp>
 #include <map>
 #include <stdexcept>
 #include <utility>
@@ -39,7 +40,10 @@ struct RuntimeMetadata::Storage {
 RuntimeMetadata::RuntimeMetadata(Storage* storage) : storage_(storage) {}
 RuntimeMetadata::~RuntimeMetadata() { delete storage_; }
 std::unique_ptr<RuntimeMetadata> RuntimeMetadata::Open(RuntimeVersion version) {
-    auto storage = std::make_unique<Storage>(version,detail::ConnectRuntimeMetadata(version));
+    return native::MetadataProvider::Open(version,detail::ConnectRuntimeMetadata(version));
+}
+std::unique_ptr<RuntimeMetadata> native::MetadataProvider::Open(RuntimeVersion version,MetadataConnection connection) {
+    auto storage = std::make_unique<RuntimeMetadata::Storage>(version,std::move(connection));
     auto result = std::unique_ptr<RuntimeMetadata>(new RuntimeMetadata(storage.get()));
     storage.release();
     return result;
@@ -59,6 +63,32 @@ RuntimeCodeEntries RuntimeMetadata::ReadCodeEntries(std::size_t index) const {
 }
 DeclaredType RuntimeMetadata::ReadTypeAt(std::size_t index) {
     return storage_->Get(storage_->types.at(index));
+}
+RuntimeType RuntimeMetadata::TypeAt(std::size_t index) {return {storage_->types.at(index).type,this};}
+RuntimeType RuntimeMetadata::ParentType(RuntimeType type) {
+    const auto parent=storage_->reader.ParentType(storage_->Describe(CheckedClass(type)));
+    return parent.type?RuntimeType{parent.type,this}:RuntimeType{};
+}
+RuntimeTypeName RuntimeMetadata::TypeName(RuntimeType type) {
+    const auto declaration=storage_->Describe(CheckedClass(type));
+    return {declaration.name_space,declaration.name};
+}
+bool RuntimeMetadata::TypeDerivesFrom(RuntimeType type,RuntimeType base) {
+    return storage_->reader.DerivesFrom(CheckedClass(type),CheckedClass(base));
+}
+RuntimeFields RuntimeMetadata::ObserveFields(RuntimeType type) {
+    const auto observed=storage_->reader.ObserveFields(storage_->Describe(CheckedClass(type)));
+    RuntimeFields result;result.iteration_error=observed.iteration_error;
+    for(const auto& row:observed.fields)
+        result.fields.push_back({RuntimeField{row.metadata,type,this},row.declaration,row.error});
+    return result;
+}
+RuntimeType RuntimeMetadata::DeclaringType(RuntimeField field) const {
+    if(field.provider_!=this || !field.metadata_)throw std::invalid_argument("runtime field belongs to another provider or is empty");
+    CheckedClass(field.owner_);return field.owner_;
+}
+RuntimeType RuntimeMetadata::FieldType(RuntimeField field) {
+    DeclaringType(field);return {storage_->reader.FieldType(field.metadata_).type,this};
 }
 std::vector<RuntimeTypeName> RuntimeMetadata::TypeNames() const {
     std::vector<RuntimeTypeName> result;result.reserve(storage_->types.size());

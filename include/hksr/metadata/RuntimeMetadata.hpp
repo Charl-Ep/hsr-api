@@ -6,6 +6,7 @@
 #include <memory>
 
 namespace hksr::sdk_v1 {
+namespace native { class MetadataProvider; }
 class RuntimeMetadata;
 struct RuntimeTypeName { std::string name_space,name; };
 // Discovery only: an observed code pointer is not a callable/qualified Method.
@@ -18,6 +19,9 @@ struct RuntimeCodeEntries {
 class RuntimeType {
 public:
     RuntimeType() = default;
+    explicit operator bool() const noexcept { return klass_ != nullptr; }
+    friend bool operator==(RuntimeType a,RuntimeType b) noexcept { return a.klass_==b.klass_ && a.provider_==b.provider_; }
+    friend bool operator!=(RuntimeType a,RuntimeType b) noexcept { return !(a==b); }
 private:
     friend class RuntimeMetadata;
     RuntimeType(void* klass, const RuntimeMetadata* provider) : klass_(klass), provider_(provider) {}
@@ -29,6 +33,27 @@ struct DeclaredField {
     std::size_t offset = 0;
     std::uint32_t flags = 0;
     bool flags_observed = false;
+};
+class RuntimeField {
+public:
+    RuntimeField()=default;
+    explicit operator bool() const noexcept {return metadata_!=nullptr;}
+private:
+    friend class RuntimeMetadata;
+    RuntimeField(void* metadata,RuntimeType owner,const RuntimeMetadata* provider)
+        :metadata_(metadata),owner_(owner),provider_(provider){}
+    void* metadata_=nullptr;
+    RuntimeType owner_;
+    const RuntimeMetadata* provider_=nullptr;
+};
+struct RuntimeFieldObservation {
+    RuntimeField field;
+    DeclaredField declaration;
+    std::string error;
+};
+struct RuntimeFields {
+    std::vector<RuntimeFieldObservation> fields;
+    std::string iteration_error;
 };
 // Current-domain instance declarations, including constructed generic types.
 // The caller retains the object while querying. No scene inventory is needed.
@@ -74,6 +99,16 @@ public:
     // duplicate display names. No new assembly scan or target method execution.
     RuntimeCodeEntries ReadCodeEntries(std::size_t type_index) const;
     DeclaredType ReadTypeAt(std::size_t type_index);
+    RuntimeType TypeAt(std::size_t type_index);
+    RuntimeType ParentType(RuntimeType type);
+    RuntimeTypeName TypeName(RuntimeType type);
+    bool TypeDerivesFrom(RuntimeType type,RuntimeType base);
+    // Only fields declared on this actual type. Walk ParentType explicitly to
+    // retain constructed generic owners and hidden same-name members. Partial
+    // failures stay attached to the corresponding observation.
+    RuntimeFields ObserveFields(RuntimeType type);
+    RuntimeType FieldType(RuntimeField field);
+    RuntimeType DeclaringType(RuntimeField field) const;
     RuntimeVersion Version() const;
     std::vector<std::string> UnavailableOperations() const;
     // Returned managed objects are NOT rooted. Retain before storing across
@@ -98,6 +133,7 @@ public:
     ObjectResult AllocateObject(RuntimeType type);
     ObjectResult ManagedType(RuntimeType type);
 private:
+    friend class native::MetadataProvider;
     void* CheckedClass(RuntimeType type) const;
     struct Storage;
     explicit RuntimeMetadata(Storage* storage);
