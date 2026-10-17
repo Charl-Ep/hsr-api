@@ -139,6 +139,19 @@ struct ConfigStep {
     std::int32_t index=-1;
     std::string key;
 };
+// An explicitly selected CharacterPhaseAnimConfig inside an official modifier.
+// The path selects data only; callbacks and tasks are never executed.
+struct ModifierPhaseSource {
+    std::string modifier;
+    std::vector<ConfigStep> path;
+};
+struct PhaseVisualConfigSources {
+    ModifierPhaseSource source;
+    VisualConfigSources visuals;
+    TextInput standby,revive;
+    VisualReactionInput reactions;
+    std::vector<CatalogIssue> issues;
+};
 enum class AnimationTaskKind { State, StateWithMove, StateWithTargetList };
 struct AnimationTaskSource {
     std::string ability;
@@ -267,6 +280,11 @@ public:
     // Selecting later phases is caller policy and is not inferred here.
     VisualConfigInput ReadCharacterVisualConfig(const std::string& character_config);
     VisualConfigSources ReadVisualConfigSources(const std::string& character_config);
+    // Resolves both visual tables against the explicitly selected phase. A
+    // null final phase uses the character's base phase; an unread path does not.
+    // Copies values and prepares private visual rows, without adding components.
+    PhaseVisualConfigSources ReadPhaseVisualConfigSources(const std::string& character_config,
+        const ModifierPhaseSource&,TypeRelationships&);
     // Automatic task-reference discovery, not execution permission or a phase
     // graph. Traverses only JsonConfig-derived references and boxed sequences;
     // dictionary values require declared reference ancestry before get_Item.

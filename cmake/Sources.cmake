@@ -57,6 +57,7 @@ set(HKSR_API_SOURCES
     src/animation/ControllerBinding.cpp
     src/animation/OfficialCatalog.cpp
     src/animation/catalog/VisualCatalog.cpp
+    src/animation/catalog/PhaseVisualCatalog.cpp
     src/animation/catalog/CharacterCatalog.cpp
     src/animation/catalog/ActionConfigCatalog.cpp
     src/animation/catalog/ReadyCatalog.cpp

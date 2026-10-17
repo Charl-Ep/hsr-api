@@ -123,7 +123,8 @@ VisualConfigInput OfficialCatalog::ReadCharacterVisualConfig(const std::string& 
     }catch(const std::exception& e){output.issues.push_back({-1,"character visual config",e.what()});}
     return output;
 }
-VisualConfigSources OfficialCatalog::ReadVisualConfigSources(const std::string& path) {
+VisualConfigSources OfficialCatalog::State::VisualSources(const std::string& path,void* phase,bool available,
+    const std::string& phase_source) {
     VisualConfigSources output;output.character_config=path;
     // 4.6 module 6AAAE554/20FD9000: CA154CA passes -1; CA10A50..A6B
     // selects float 0.2 at RVA40E6008. This is a versioned adapter fact, not
@@ -134,14 +135,10 @@ VisualConfigSources OfficialCatalog::ReadVisualConfigSources(const std::string& 
     output.blink_suppressed_expression={true,detail::catalog_bindings::blink_expression,{}};
     output.blink_source={true,detail::catalog_bindings::blink_source,{}};
     output.defaults.source="RPG.GameCore.GameCoreConfigManager.GameCoreConstValueConfig.ModifierBehaviorVisualList";
-    output.character.source=path+".PhaseAnimConfig.ModifierBehaviorVisuals";
-    auto& s=*state_;State::Scope scope(s);void* phase=nullptr;
-    try {
-        auto* config=s.Config("CharacterConfig",path,scope);
-        phase=Read<void*>(config,Field(s.metadata.ReadObjectFields(config),"PhaseAnimConfig","RPG.GameCore.CharacterPhaseAnimConfig"));
-        output.context_available=true;output.character.loaded=true;
-        output.character.phase_present=phase!=nullptr;
-    }catch(const std::exception& e){output.character.issues.push_back({-1,"character phase context",e.what()});}
+    output.character.source=phase_source+".ModifierBehaviorVisuals";
+    auto& s=*this;Scope scope(s);
+    output.context_available=available;output.character.loaded=available;
+    output.character.phase_present=available && phase!=nullptr;
     if(output.context_available) {
         try {
             if(phase)output.character.behaviors=s.VisualRows(phase,"ModifierBehaviorVisuals",phase);
@@ -154,6 +151,16 @@ VisualConfigSources OfficialCatalog::ReadVisualConfigSources(const std::string& 
         auto* config=s.GlobalVisualConfig(scope);output.defaults.loaded=true;
         output.defaults.behaviors=s.VisualRows(config,"ModifierBehaviorVisualList",phase);
     }catch(const std::exception& e){output.defaults.issues.push_back({-1,"default visual config",e.what()});}
+    return output;
+}
+VisualConfigSources OfficialCatalog::ReadVisualConfigSources(const std::string& path) {
+    auto& s=*state_;State::Scope scope(s);void* phase=nullptr;std::string error;
+    try {
+        auto* config=s.Config("CharacterConfig",path,scope);
+        phase=Read<void*>(config,Field(s.metadata.ReadObjectFields(config),"PhaseAnimConfig","RPG.GameCore.CharacterPhaseAnimConfig"));
+    }catch(const std::exception& e){error=e.what();}
+    auto output=s.VisualSources(path,phase,error.empty(),path+".PhaseAnimConfig");
+    if(!error.empty())output.character.issues.push_back({-1,"character phase context",error});
     return output;
 }
 }

@@ -178,6 +178,8 @@ struct OfficialCatalog::State {
         return config;
     }
     CatalogBatch<VisualBehaviorInput> VisualRows(void* config,const char* array_name,void* phase_config=nullptr);
+    VisualConfigSources VisualSources(const std::string& character_config,void* phase,bool context_available,
+        const std::string& phase_source);
     PresentationConfigInput Presentation(void* config,const std::vector<DeclaredField>& fields,const std::string& path) {
         PresentationConfigInput output; output.path=path;
         try { output.initial_state.value=String(config,fields,"InitAnimStateName"); output.initial_state.available=true; }

@@ -137,7 +137,8 @@ struct Inputs:MethodResolver,ManagedObjects,ObjectMetadata,TypeRelationships {
         }
         Check(std::string(space)=="RPG.GameCore" && kind==MethodKind::Static);
         if(std::string(type)=="AbilityJsonTable") {
-            Check(std::string(name)=="GetTurnBasedAbility" && std::string(result)=="RPG.GameCore.TurnBasedAbilityConfig" &&
+            Check(((std::string(name)=="GetTurnBasedAbility" && std::string(result)=="RPG.GameCore.TurnBasedAbilityConfig") ||
+                (std::string(name)=="GetGlobalModifierConfig" && std::string(result)=="RPG.GameCore.TurnBasedModifierConfig")) &&
                 parameters.size()==1 && std::string(*parameters.begin())=="System.String"); return M(Load);
         }
         Check(std::string(type)=="GameCoreConfigLoader");
@@ -169,12 +170,15 @@ struct Inputs:MethodResolver,ManagedObjects,ObjectMetadata,TypeRelationships {
         }
         if(node->type=="Collection") {
             type.methods.push_back({"get_Count","System.Int32",{},false,M(Count)});
+            type.methods.push_back({"get_Item","RPG.GameCore.FixtureConfig",{"System.Int32"},false,M(Item)});
             type.methods.push_back({"System.Collections.ICollection.CopyTo","System.Void",{"System.Array","System.Int32"},false,M(Copy)});
         }
         return type;
     }
     std::vector<DeclaredField> ReadObjectFields(void* object) override { ++field_reads;return static_cast<Node*>(object)->fields; }
     bool TypeDerivesFrom(const char* space,const char* name,const char* base_space,const char* base_name) override {
+        if(std::string(base_space)=="System" && std::string(base_name)=="ValueType")
+            return std::string(space)=="System" && std::string(name)=="Int32";
         Check(std::string(base_space)=="RPG.GameCore" && std::string(base_name)=="JsonConfig");
         return std::string(space)=="RPG.GameCore" && (std::string(name)=="FixtureConfig" || std::string(name)=="FixtureRow" ||
             std::string(name)=="TriggerAnimState" || std::string(name)=="TriggerAnimStateWithMove" || std::string(name)=="MoveToTargetList" ||
@@ -449,6 +453,70 @@ void TestActionConfig() {
     const auto missing_context=catalog.ReadVisualConfigSources("missing-visual-character");
     Check(!missing_context.context_available && missing_context.defaults.loaded &&
         !missing_context.character.issues.empty() && roots.empty());
+    // A selected modifier phase is the complete replacement phase, not an
+    // overlay merged with the base phase. Global rows resolve against it too.
+    {
+    auto selected_phase=New();selected_phase->type="CharacterPhaseAnimConfig";
+    String(selected_phase,"StandBy",L"Phase_Idle");String(selected_phase,"Revive",L"Phase_Revive");
+    for(auto name:{"Hit","HitH","HitFly","HitFlyRecover","FlyHit","Die","DieHit","DieFly","DieLimbo"})String(selected_phase,name,L"");
+    Field(selected_phase,"ForceHitH","System.Boolean",static_cast<std::uint8_t>(0));
+    Field(selected_phase,"OverrideHitAnimWeight","System.Single",-1.0f);
+    Field(selected_phase,"ModifierBehaviorVisuals","RPG.GameCore.ModifierBehaviorVisual[]",Array({monster}));
+    category_overrides[selected_phase]=L"Modifier_Phase_Category";
+    auto change=New();Field(change,"PhaseAnimConfig","RPG.GameCore.CharacterPhaseAnimConfig",selected_phase);
+    auto callback=New();Sequence(callback,"Tasks",Array({change}));
+    auto modifier=New();Sequence(modifier,"Callbacks",Array({callback}));documents[L"selected-modifier"]=modifier;
+    ModifierPhaseSource phase_source{"selected-modifier",{
+        {"RPG.GameCore.FixtureConfig","Callbacks",ConfigSelection::Index,0},
+        {"RPG.GameCore.FixtureConfig","Tasks",ConfigSelection::Index,0},
+        {"RPG.GameCore.FixtureConfig","PhaseAnimConfig"}}};
+    auto phase_loads=loads;auto phase_result=catalog.ReadPhaseVisualConfigSources("visual-override",phase_source,input);
+    Check(phase_result.issues.empty() && phase_result.visuals.context_available && loads==phase_loads+1 && roots.empty());
+    Check(phase_result.standby.value=="Phase_Idle" && phase_result.revive.value=="Phase_Revive" && phase_result.reactions.hit.available && phase_result.reactions.hit.value.empty());
+    Check(phase_result.visuals.character.behaviors.rows.size()==1 && phase_result.visuals.character.behaviors.rows[0].flag.value==6);
+    Check(phase_result.visuals.defaults.behaviors.rows[1].occur.resolved_state.value=="Modifier_Phase_Category");
+    Check(phase_result.visuals.defaults.behaviors.rows[1].emotion.value=="Emo_Stun");
+    Check(phase_result.visuals.defaults.behaviors.rows[2].recover.resolved_state.value=="Effect_Reaction_Category");
+    Check(phase_result.source.path.size()==3 && phase_result.visuals.character.source=="selected-modifier.Callbacks[0].Tasks[0].PhaseAnimConfig.ModifierBehaviorVisuals");
+    auto bad_source=phase_source;bad_source.path[0].index=7;
+    auto invalid_phase=catalog.ReadPhaseVisualConfigSources("visual-override",bad_source,input);
+    Check(!invalid_phase.visuals.context_available && !invalid_phase.issues.empty() && roots.empty());
+    bad_source=phase_source;bad_source.path[0].declaring_type="RPG.GameCore.AnotherOwner";
+    Check(!catalog.ReadPhaseVisualConfigSources("visual-override",bad_source,input).visuals.context_available && roots.empty());
+    bad_source=phase_source;bad_source.path.resize(2);
+    Check(!catalog.ReadPhaseVisualConfigSources("visual-override",bad_source,input).visuals.context_available && roots.empty());
+    const auto original_kind=selected_phase->type;selected_phase->type="AnotherConfig";
+    Check(!catalog.ReadPhaseVisualConfigSources("visual-override",phase_source,input).visuals.context_available && roots.empty());
+    selected_phase->type=original_kind;
+    auto* original_phase=selected_phase;void* null_phase=nullptr;
+    std::memcpy(&change->slots[0],&null_phase,sizeof(null_phase));phase_loads=loads;
+    auto base_phase=catalog.ReadPhaseVisualConfigSources("visual-override",phase_source,input);
+    Check(base_phase.visuals.context_available && loads==phase_loads+2 && roots.empty());
+    Check(base_phase.visuals.defaults.behaviors.rows[1].recover.resolved_state.value=="Character_Phase_Category");
+    auto no_phase=catalog.ReadPhaseVisualConfigSources("visual-character",phase_source,input);
+    Check(no_phase.visuals.context_available && !no_phase.visuals.character.phase_present && no_phase.issues.empty() && roots.empty());
+    Check(no_phase.visuals.defaults.behaviors.rows[1].recover.resolved_state.value=="Official_Default_Category");
+    std::memcpy(&change->slots[0],&original_phase,sizeof(original_phase));
+    // A failed source must not silently turn into the valid base phase.
+    bad_source=phase_source;bad_source.modifier="missing-modifier";
+    Check(!catalog.ReadPhaseVisualConfigSources("visual-override",bad_source,input).visuals.context_available && roots.empty());
+    auto value_field=New();Field(value_field,"Value","System.Int32",17);documents[L"bad-value"]=value_field;
+    bad_source={"bad-value",{{"RPG.GameCore.FixtureConfig","Value"}}};
+    Check(!catalog.ReadPhaseVisualConfigSources("visual-override",bad_source,input).visuals.context_available && roots.empty());
+    // List access uses the declared reference-return getter, without copying
+    // the whole list. A string-key dictionary follows the same path contract.
+    auto list=Array({callback});list->type="Collection";
+    auto modifier_list=New();Field(modifier_list,"Callbacks","System.Collections.Generic.List<RPG.GameCore.FixtureConfig>",list);documents[L"modifier-list"]=modifier_list;
+    bad_source=phase_source;bad_source.modifier="modifier-list";
+    Check(catalog.ReadPhaseVisualConfigSources("visual-override",bad_source,input).standby.value=="Phase_Idle" && roots.empty());
+    // The source row and previously returned value snapshots remain independent.
+    Check(phase_result.visuals.defaults.behaviors.rows[1].occur.resolved_state.value=="Modifier_Phase_Category");
+    for(const auto& f:monster->fields)if(f.name=="AnimRecoverCat")Check(*(reinterpret_cast<std::uint8_t*>(monster)+f.offset)==0);
+    auto phase_dict=Array({nullptr,callback});phase_dict->type="Dictionary";
+    auto modifier_dict=New();Field(modifier_dict,"Callbacks","System.Collections.Generic.Dictionary<System.String,RPG.GameCore.FixtureConfig>",phase_dict);documents[L"modifier-dictionary"]=modifier_dict;
+    bad_source.modifier="modifier-dictionary";bad_source.path[0].selection=ConfigSelection::StringKey;bad_source.path[0].key="branch_key";
+    Check(catalog.ReadPhaseVisualConfigSources("visual-override",bad_source,input).standby.value=="Phase_Idle" && roots.empty());
+    }
     // Warm/stale derived fields must not change output semantics; originals stay
     // untouched even when the official preparer overwrites fields on its copy.
     for(const auto& f:unknown->fields)if(f.name=="AnimRecoverCat")*(reinterpret_cast<std::uint8_t*>(unknown)+f.offset)=99;
