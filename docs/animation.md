@@ -48,7 +48,7 @@ The query does not flatten branches or execute gameplay predicates. Consumers us
 
 ## Phase visual data
 
-`ReadVisualConfigSources(character_config)` resolves global and character visual rows against the base character phase. `ReadPhaseVisualConfigSources(character_config, source, types)` selects a `CharacterPhaseAnimConfig` by modifier name and declared field path. Paths support reference fields, array/list indices and string dictionary keys.
+`ReadVisualConfigSources(character_config)` resolves global and character visual rows against the base character phase. `ReadPhaseVisualConfigSources(character_config, source, types)` selects a `CharacterPhaseAnimConfig` from an explicit ability, global modifier or global template definition. `PhaseVisualSource` contains the root kind, definition name and declared field path. Paths support reference fields, array/list indices and string dictionary keys; local definitions are reached through their owner.
 
 The selected phase replaces the base phase as a whole. A null final phase falls back to the base; an unread path reports an error. Results contain copied standby, revive, reaction and visual-state data. Global rows resolve their category references against the same selected phase. Consumers retain the separate global expression source.
 

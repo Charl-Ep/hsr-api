@@ -2,10 +2,10 @@
 
 namespace hksr::sdk_v1 {
 PhaseVisualConfigSources OfficialCatalog::ReadPhaseVisualConfigSources(const std::string& character,
-    const ModifierPhaseSource& source,TypeRelationships& types) {
+    const PhaseVisualSource& source,TypeRelationships& types) {
     PhaseVisualConfigSources output;output.source=source;
     auto& s=*state_;State::Scope scope(s);void* phase=nullptr;
-    std::string location=source.modifier,error;
+    std::string location=source.name,error;
     auto keep=[&](void* object){return object?scope.Keep(ObjectResult{{true,0},object}):nullptr;};
     auto reference=[&](const std::string& name) {
         const auto dot=name.rfind('.');
@@ -15,18 +15,27 @@ PhaseVisualConfigSources OfficialCatalog::ReadPhaseVisualConfigSources(const std
             "phase path cannot reinterpret a value-type field");
     };
     try {
-        Require(!source.modifier.empty() && source.modifier.find('\0')==std::string::npos && !source.path.empty(),
-            "modifier phase source is empty or invalid");
-        auto* name=scope.Keep(s.objects.NewStringUtf8(source.modifier.c_str()));
-        phase=scope.Keep(s.Call(s.Static("AbilityJsonTable","GetGlobalModifierConfig",
-            "RPG.GameCore.TurnBasedModifierConfig",{"System.String"}),name));
+        Require(!source.name.empty() && source.name.find('\0')==std::string::npos && !source.path.empty(),
+            "phase definition source is empty or invalid");
+        const char* getter=nullptr;const char* root_type=nullptr;
+        switch(source.root) {
+        case PhaseConfigRoot::Ability:
+            getter="GetTurnBasedAbility";root_type="RPG.GameCore.TurnBasedAbilityConfig";break;
+        case PhaseConfigRoot::GlobalModifier:
+            getter="GetGlobalModifierConfig";root_type="RPG.GameCore.TurnBasedModifierConfig";break;
+        case PhaseConfigRoot::GlobalTemplate:
+            getter="GetGlobalTaskListTemplate";root_type="RPG.GameCore.TaskListTemplate";break;
+        default:throw std::invalid_argument("unknown phase definition root");
+        }
+        auto* name=scope.Keep(s.objects.NewStringUtf8(source.name.c_str()));
+        phase=scope.Keep(s.Call(s.Static("AbilityJsonTable",getter,root_type,{"System.String"}),name));
         std::string selected_type;
         for(const auto& step:source.path) {
-            Require(phase!=nullptr,"modifier phase path has a null intermediate node");
+            Require(phase!=nullptr,"phase path has a null intermediate node");
             const auto fields=s.metadata.ReadObjectFields(phase);DeclaredField selected;unsigned matches=0;
             for(const auto& f:fields)if(f.owner_namespace+"."+f.owner_name==step.declaring_type && f.name==step.field &&
                 f.flags_observed && !(f.flags&0x10)){selected=f;++matches;}
-            Require(matches==1,"modifier phase path field is absent or ambiguous");
+            Require(matches==1,"phase path field is absent or ambiguous");
             location+="."+step.field;
             if(step.selection==ConfigSelection::Reference) {
                 selected_type=selected.type;reference(selected_type);phase=keep(Read<void*>(phase,selected));
@@ -68,7 +77,7 @@ PhaseVisualConfigSources OfficialCatalog::ReadPhaseVisualConfigSources(const std
         if(phase) {
             const auto actual=s.metadata.ReadObjectTypeName(phase);
             Require(actual.name_space=="RPG.GameCore" && actual.name=="CharacterPhaseAnimConfig",
-                "selected modifier data is not CharacterPhaseAnimConfig");
+                "selected data is not CharacterPhaseAnimConfig");
         } else {
             auto* base=s.Config("CharacterConfig",character,scope);
             phase=keep(Read<void*>(base,Field(s.metadata.ReadObjectFields(base),"PhaseAnimConfig","RPG.GameCore.CharacterPhaseAnimConfig")));

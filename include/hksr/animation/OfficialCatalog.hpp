@@ -139,14 +139,17 @@ struct ConfigStep {
     std::int32_t index=-1;
     std::string key;
 };
-// An explicitly selected CharacterPhaseAnimConfig inside an official modifier.
-// The path selects data only; callbacks and tasks are never executed.
-struct ModifierPhaseSource {
-    std::string modifier;
+enum class PhaseConfigRoot { Ability, GlobalModifier, GlobalTemplate };
+// An explicit official definition and path to CharacterPhaseAnimConfig. Local
+// modifiers/templates are reached from their declaring ability, not by a
+// global name lookup. Reading does not construct or execute tasks/modifiers.
+struct PhaseVisualSource {
+    PhaseConfigRoot root=PhaseConfigRoot::GlobalModifier;
+    std::string name;
     std::vector<ConfigStep> path;
 };
 struct PhaseVisualConfigSources {
-    ModifierPhaseSource source;
+    PhaseVisualSource source;
     VisualConfigSources visuals;
     TextInput standby,revive;
     VisualReactionInput reactions;
@@ -284,7 +287,7 @@ public:
     // null final phase uses the character's base phase; an unread path does not.
     // Copies values and prepares private visual rows, without adding components.
     PhaseVisualConfigSources ReadPhaseVisualConfigSources(const std::string& character_config,
-        const ModifierPhaseSource&,TypeRelationships&);
+        const PhaseVisualSource&,TypeRelationships&);
     // Automatic task-reference discovery, not execution permission or a phase
     // graph. Traverses only JsonConfig-derived references and boxed sequences;
     // dictionary values require declared reference ancestry before get_Item.
