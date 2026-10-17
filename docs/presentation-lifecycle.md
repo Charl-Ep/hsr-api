@@ -16,6 +16,7 @@ Call `PresentationContext::Create(metadata, capabilities, policy, trace)` from `
 | `Baselines()`, `ModelTransitions()` | Model capture and transition factories |
 | `Controls()`, `Player()` | Control-session factory and current-player resolver |
 | `EffectServices()`, `Outfits()` | Optional effect and outfit services |
+| `CreateEffectEntityFollow()` | Request-scoped entity-follow plugin adapter |
 | `CreateEffectObserver(before, after)` | Observer for official effect submissions from this client's entities |
 | `CreateEventConstructionObserver(before, tasks, after)` | Final animation-event inputs and task-list construction for this client's entities |
 | `CreateSequenceObserver(observe)` | Execution scopes for explicitly tracked event sequences |
@@ -124,6 +125,14 @@ Create an effect observer during preparation, then call its `ActivateOnCurrentTh
 `OwnedEffectRequest::Cancel(EffectRemovalOptions)` accepts `fade`, `immediate_fade` and `unbind`. `Service` forwards them to the official effect manager with the retained request ID. Keep servicing until `closed`; accepted removal is not completed destruction. ID zero is rejected by both removal paths because the engine treats it as an unrestricted filter.
 
 See [animation inputs](animation.md) and the [C++ ownership contract](cpp-interface.md).
+
+## Entity motion driven by effects
+
+`context.CreateEffectEntityFollow()` creates an engine-thread adapter for `MonoEffectPluginEntityFollowEffect`. `Read(reference)` reports its current target identities. `Set(reference, expected_targets, desired_targets)` changes the binding only when the observed list matches the expected list. An empty desired list invokes the official unbind operation; an unchanged list performs no write or allocation.
+
+Targets are explicit managed `GameEntity` references. The caller retains the request and target lifetimes, arbitrates competing motion owners, and clears the binding before retiring targets. The plugin performs animation-driven movement and removal of accumulated translation. The adapter does not load pending effects, select global targets, or advance animation.
+
+Call `Close()` to release the adapter's cached type references. It does not undo an active binding. A failed native call may have applied part of the change; use `Read` to inspect the actual list before deciding cleanup.
 
 ## Common Timelines
 

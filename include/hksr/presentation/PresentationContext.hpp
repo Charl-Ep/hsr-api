@@ -28,6 +28,7 @@ struct Position3;
 struct Rotation4;
 class NpcEventSupplement;
 class PresentationEffects;
+class EffectEntityFollow;
 class OwnedTimeline;
 class EffectSubmissions;
 struct EffectSubmission;
@@ -127,6 +128,9 @@ public:
     ControllerBindingServices Controllers() const;
     std::optional<EffectRequestServices> Effects() const;
     std::shared_ptr<const PresentationEffects> EffectServices() const;
+    // Caller controls target lifetimes and closes this adapter on the engine
+    // thread. Binding targets is not permission to dispose/move other entities.
+    std::unique_ptr<EffectEntityFollow> CreateEffectEntityFollow() const;
     // Engine-thread Common playback. The caller services the request through
     // pool return, including after the actor/action has ended.
     std::unique_ptr<OwnedTimeline> CreateTimeline(EntityToken,GameWorld*) const;

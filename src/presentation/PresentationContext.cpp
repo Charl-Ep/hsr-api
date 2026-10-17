@@ -18,6 +18,7 @@
 #include <hksr/animation/ControllerBinding.hpp>
 #include <hksr/presentation/effects/OwnedEffectRequest.hpp>
 #include <hksr/presentation/effects/PresentationEffects.hpp>
+#include <hksr/presentation/effects/EffectEntityFollow.hpp>
 #include <hksr/presentation/effects/EffectSubmissions.hpp>
 #include <hksr/presentation/effects/EffectTriggerSource.hpp>
 #include <hksr/presentation/events/AnimationExitConfig.hpp>
@@ -358,6 +359,29 @@ std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices()
         },std::move(actions));
 }
 PresentationIsolationStatus PresentationContext::IsolationStatus() const{return storage_->state->isolation_status;}
+std::unique_ptr<EffectEntityFollow> PresentationContext::CreateEffectEntityFollow() const {
+    const auto s=storage_->state;
+    if(!s->metadata || !s->effect_access || s->effect_control_closed)
+        throw std::logic_error("presentation effects are not prepared or are closed");
+    auto& metadata=*s->metadata;
+    const auto behavior=metadata.FindType("","GIMGIMFGBFF");
+    const auto observed=metadata.ObserveFields(behavior);
+    RuntimeType list_type;
+    for(const auto& field:observed.fields)if(field.declaration.name=="PJFPEKPDKIH") {
+        if(!field.error.empty())throw std::runtime_error(field.error);
+        if(list_type)throw std::runtime_error("follow list field is ambiguous");
+        list_type=metadata.FieldType(field.field);
+    }
+    if(!list_type)throw std::runtime_error("follow list declaration unavailable: "+observed.iteration_error);
+    auto methods=ResolveEffectEntityFollow460(metadata);
+    const auto fields=ResolveEffectEntityFollowFields460(metadata.ReadFields("RPG.Client","MonoEffect"),
+        metadata.ReadFields("RPG.Client","MonoEffectPluginEntityFollowEffect"),metadata.ReadFields(behavior));
+    auto list=ResolveReferenceListMethods(metadata.ReadType(list_type),"RPG.GameCore.GameEntity");
+    for(const auto& error:methods.binding_errors)s->Log("effect follow binding: "+error);
+    for(const auto& error:list.binding_errors)s->Log("effect follow list: "+error);
+    return std::make_unique<EffectEntityFollow>(*s->effect_access,std::move(methods),fields,s->bindings.references,
+        s->objects,s->resources.Arrays(),ManagedReferenceList(std::move(list)));
+}
 std::unique_ptr<OwnedTimeline> PresentationContext::CreateTimeline(EntityToken token,GameWorld* world) const {
     const auto s=storage_->state;
     if(!s->isolation)throw std::logic_error("Timeline playback requires presentation isolation");

@@ -16,6 +16,7 @@
 #include <hksr/presentation/events/AnimationEventConstruction.hpp>
 #include <hksr/presentation/events/AnimationEventDefinitions.hpp>
 #include <hksr/presentation/effects/PresentationEffects.hpp>
+#include <hksr/presentation/effects/EffectEntityFollow.hpp>
 #include <hksr/presentation/effects/EffectSubmissions.hpp>
 #include <hksr/runtime/RuntimeHost.hpp>
 
@@ -59,6 +60,7 @@ public:
         return context_->Animations()(owner);
     }
     std::shared_ptr<const hksr::api::PresentationEffects> Effects() {return context_->EffectServices();}
+    std::unique_ptr<hksr::api::EffectEntityFollow> EffectFollow() {return context_->CreateEffectEntityFollow();}
     hksr::api::EffectControlResult EffectProgress(hksr::api::EffectReference ref) {
         return context_->EffectServices()->SetProgress(ref,0.5f,0.1f);
     }
