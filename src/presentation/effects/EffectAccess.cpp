@@ -37,7 +37,9 @@ CallResult EffectAccess::Submit(void* manager,EffectReference reference) const {
 }
 Observed<bool> EffectAccess::Remove(void* manager,EffectReference reference,bool fade) const {
     Observed<bool> out;
-    if(manager && reference.parameters)out.read=native::Call(methods_->remove,&out.value,manager,reference,fade);
+    // RemoveEffectByTriggerParamsRef eventually sets only the numeric filter;
+    // the manager interprets zero as an unrestricted ID.
+    if(manager && reference.parameters && reference.id)out.read=native::Call(methods_->remove,&out.value,manager,reference,fade);
     return out;
 }
 CallResult EffectAccess::ReleaseUnsubmitted(EffectReference reference) const {

@@ -49,6 +49,7 @@ struct PresentationContext::State {
     std::unique_ptr<PresentationIsolation> isolation;
     std::unique_ptr<EffectInputs> effect_inputs;
     std::unique_ptr<EffectControl> effect_control;
+    std::unique_ptr<EffectActions> effect_actions;
     bool effect_control_closed=false;
     std::optional<EffectAccess> effect_access;
     EffectCompletionAllocation completion;
@@ -90,6 +91,16 @@ struct PresentationContext::State {
                 metadata->ReadFields("RPG.Client","MonoEffect"));
         }
         return *effect_control;
+    }
+    EffectActions& EffectOperations() {
+        if(effect_control_closed)throw std::logic_error("presentation effect actions closed");
+        if(!effect_actions) {
+            const auto methods=ResolveEffectActions460(*metadata);
+            for(const auto& error:methods.binding_errors)Log("effect action binding: "+error);
+            effect_actions=std::make_unique<EffectActions>(*effect_access,methods,bindings.references,objects,
+                resources.Arrays(),metadata->ReadFields("RPG.Client","MonoEffect"));
+        }
+        return *effect_actions;
     }
     std::unique_ptr<EventRegistrationLease> ExitEvents(EntityToken entity,const std::string& state,
         const std::vector<EffectRemovalSource>& sources) {
@@ -315,10 +326,13 @@ std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices()
     EffectControlServices control;
     control.progress=[s](EffectReference ref,float value,float duration){return s->EffectControls().SetProgress(ref,value,duration);};
     control.animator=[s](EffectReference ref,int hash,float duration,bool restart){return s->EffectControls().SetAnimatorState(ref,hash,duration,restart);};
+    EffectActionServices actions;
+    actions.trigger=[s](EffectReference ref,const std::string& name,bool reset){return s->EffectOperations().Trigger(ref,name,reset);};
+    actions.remove=[s](void* manager,EffectReference ref,const EffectRemovalOptions& options){return s->EffectOperations().Remove(manager,ref,options);};
     return std::make_shared<PresentationEffects>(std::move(*services),std::move(control),
         [s](void* parameters,void* caster,void* target,void* callback,const EntityEffectOptions& options) {
             return s->effect_inputs->ConfigureEntity(parameters,caster,target,callback,options);
-        });
+        },std::move(actions));
 }
 PresentationIsolationStatus PresentationContext::IsolationStatus() const{return storage_->state->isolation_status;}
 std::unique_ptr<EffectSubmissions> PresentationContext::CreateEffectObserver(
@@ -381,6 +395,7 @@ bool PresentationContext::Close() {
     bool closed=!s.effect_inputs || s.effect_inputs->Close();
     s.effect_control_closed=true;
     if(s.effect_control && !s.effect_control->Close())closed=false;
+    if(s.effect_actions && !s.effect_actions->Close())closed=false;
     for(auto it=s.exit_inputs.begin();it!=s.exit_inputs.end();) {
         if((*it)->Close())it=s.exit_inputs.erase(it);else {closed=false;++it;}
     }

@@ -36,6 +36,7 @@ public:
     HKSR_API CallResult Submit(void* manager,EffectReference reference) const;
     // Official integrated removal covers active, pending and streaming effects.
     // true means matched/submitted removal, NOT synchronous destruction/pooling.
+    // A zero ID is not forwarded: the official filter treats it as a wildcard.
     HKSR_API Observed<bool> Remove(void* manager,EffectReference reference,bool fade) const;
     // ONLY for an acquired request which was never passed to Submit, or whose
     // failure ownership has separately been established. Never after Remove.

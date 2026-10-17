@@ -13,7 +13,7 @@ using namespace hksr::api;
 int info,entity,recipient,path,mapped,manager,other_manager,effect,official_callback,official_completions=0;
 void* fail_keep=nullptr;
 int id_reads=0;
-struct Params {unsigned id=0;bool released=false;int state=0;void* callback=nullptr;void* target=nullptr;};
+struct Params {unsigned id=1;bool released=false;int state=0;void* callback=nullptr;void* target=nullptr;};
 Params first,second;Params* acquiring=&first;
 std::map<int,void*> roots;int root_id=0;
 std::vector<std::unique_ptr<std::array<unsigned char,128>>> delegates;
@@ -69,6 +69,35 @@ void Reset() {
 }
 }
 void TestOwnedEffectRequest() {
+    Reset();
+    {
+        int attempts=0;EffectActionServices actions;
+        actions.remove=[&](void* service,EffectReference ref,const EffectRemovalOptions& options){
+            Check(service==&manager && ref.parameters==&first && options.fade && options.immediate_fade && options.unbind);
+            ++attempts;EffectRemovalResult result;result.removal.value=true;result.removal.read={true,0};result.input_release={true,0};return result;
+        };
+        PresentationEffects factory(Services(),{}, {},actions);
+        auto request=factory.CreateRequest();request->Start(&entity,&path);
+        request->Cancel(EffectRemovalOptions{true,true,true});request->Service();
+        Check(attempts==1 && removes==0 && !request->Status().closed);
+        request->Cancel();request->Service();Check(attempts==1);
+        Invoke(first,&effect);first.state=3;request->Service();Check(attempts==2);
+        first.released=true;request->Service();Check(request->Status().closed && roots.empty());
+    }
+    Reset();
+    {
+        int calls=0;bool throws=false;EffectActionServices actions;
+        actions.remove=[&](void*,EffectReference,const EffectRemovalOptions&){
+            ++calls;if(throws)throw std::runtime_error("provider failure");
+            EffectRemovalResult out;out.removal.read={true,0};out.removal.value=true;return out;
+        };
+        OwnedEffectRequest request(Services(),{},actions);request.Start(&entity,&path);
+        request.Cancel(EffectRemovalOptions{true,false,false});request.Service();Check(calls==1 && request.Status().removal.value);
+        throws=true;request.Cancel(EffectRemovalOptions{true,true,false});request.Service();
+        Check(calls==2 && !request.Status().removal.read.returned && !request.Status().removal.value);
+        Check(request.Status().detail.find("provider failure")!=std::string::npos);request.Service();Check(calls==2);
+        first.released=true;request.Service();Check(request.Status().closed && roots.empty());
+    }
     Reset();
     {
         bool attributed=false;EntityEffectOptions options;options.unique_name="different-target";
@@ -186,7 +215,7 @@ void TestOwnedEffectRequest() {
         services.retire_request=[&](EffectReference){++source_writes;};
         first.callback=&official_callback;first.target=&entity;first.state=1;
         OwnedEffectRequest request(services);
-        Check(request.TrackSubmitted(&manager,{0,0,&first}));
+        Check(request.TrackSubmitted(&manager,{first.id,0,&first}));
         Check(request.Status().submitted && !request.Status().submit.returned && submits==0 && delegates.empty());
         Check(first.callback==&official_callback && first.target==&entity && source_writes==0);
         current_manager=&other_manager;request.Cancel();remove_match=false;request.Service();
@@ -200,7 +229,7 @@ void TestOwnedEffectRequest() {
     {
         first.callback=&official_callback;first.state=3;
         OwnedEffectRequest request(Services());request.Cancel(false);
-        Check(request.TrackSubmitted(&manager,{0,0,&first}) && removes==0);
+        Check(request.TrackSubmitted(&manager,{first.id,0,&first}) && removes==0);
         // Tracking never cancels inside the producer's completion stack.
         release_on_remove=true;request.Service();
         Check(removes==1 && request.Status().closed && official_completions==1 && submits==0 && releases==0 && roots.empty());
@@ -208,20 +237,20 @@ void TestOwnedEffectRequest() {
     Reset();
     {
         first.callback=&official_callback;first.state=3;
-        OwnedEffectRequest request(Services());Check(request.TrackSubmitted(&manager,{0,0,&first}));
+        OwnedEffectRequest request(Services());Check(request.TrackSubmitted(&manager,{first.id,0,&first}));
         ++first.id;request.Cancel();request.Service();
         Check(request.Status().closed && removes==0 && releases==0 && first.callback==&official_callback && roots.empty());
     }
     Reset();
     {
         first.released=true;OwnedEffectRequest request(Services());
-        Check(request.TrackSubmitted(&manager,{0,0,&first}) && request.Status().closed && roots.empty());
+        Check(request.TrackSubmitted(&manager,{first.id,0,&first}) && request.Status().closed && roots.empty());
         Check(submits==0 && removes==0 && releases==0);
     }
     Reset();
     {
         fail_keep=&first;OwnedEffectRequest request(Services());
-        Check(!request.TrackSubmitted(&manager,{0,0,&first}) && id_reads==0);
+        Check(!request.TrackSubmitted(&manager,{first.id,0,&first}) && id_reads==0);
         // The failed capture cannot dereference an unretained request later.
         request.Cancel();request.Service();
         Check(request.Status().closed && !request.Status().request_ended && id_reads==0 && removes==0 && releases==0 && roots.empty());
@@ -230,7 +259,7 @@ void TestOwnedEffectRequest() {
     {
         first.callback=&official_callback;first.state=1;
         OwnedEffectRequest request(Services());id_fault=true;
-        Check(request.TrackSubmitted(&manager,{0,0,&first}) && !request.Status().closed);
+        Check(request.TrackSubmitted(&manager,{first.id,0,&first}) && !request.Status().closed);
         id_fault=false;first.released=true;request.Service();
         Check(request.Status().closed && removes==0 && releases==0 && roots.empty());
     }

@@ -21,6 +21,10 @@ struct Signals {
 struct OwnedEffectRequest::State {
     EffectRequestServices services;
     ConfigureEntityEffect configure_entity;
+    EffectActionServices actions;
+    EffectRemovalOptions removal_options;
+    bool explicit_removal=false;
+    std::uint64_t removal_revision=0,removed_revision=0;
     api::ManagedRoots roots;
     std::vector<api::ManagedRootId> handles;
     std::shared_ptr<Signals> signals=std::make_shared<Signals>();
@@ -93,13 +97,27 @@ struct OwnedEffectRequest::State {
     }
 };
 OwnedEffectRequest::OwnedEffectRequest(EffectRequestServices services):OwnedEffectRequest(std::move(services),{}){}
-OwnedEffectRequest::OwnedEffectRequest(EffectRequestServices services,ConfigureEntityEffect configure):state_(new State(std::move(services))) {
-    state_->configure_entity=std::move(configure);
+OwnedEffectRequest::OwnedEffectRequest(EffectRequestServices services,ConfigureEntityEffect configure)
+    :OwnedEffectRequest(std::move(services),std::move(configure),{}){}
+OwnedEffectRequest::OwnedEffectRequest(EffectRequestServices services,ConfigureEntityEffect configure,EffectActionServices actions)
+    :state_(new State(std::move(services))) {
+    state_->configure_entity=std::move(configure);state_->actions=std::move(actions);
 }
 OwnedEffectRequest::~OwnedEffectRequest(){delete state_;}
 const EffectRequestStatus& OwnedEffectRequest::Status() const{return state_->status;}
 void OwnedEffectRequest::Cancel(bool fade) {
+    if(state_->fade!=fade)++state_->removal_revision;
     state_->status.cancelled=true;state_->fade=fade;
+    // General scene teardown must not drop already requested immediate/unbind
+    // semantics for a request whose asynchronous completion is still pending.
+    state_->removal_options.fade=fade;
+}
+void OwnedEffectRequest::Cancel(EffectRemovalOptions options) {
+    const auto previous=state_->removal_options;
+    if(!state_->explicit_removal || previous.fade!=options.fade || previous.immediate_fade!=options.immediate_fade || previous.unbind!=options.unbind)
+        ++state_->removal_revision;
+    state_->status.cancelled=true;state_->fade=options.fade;
+    state_->explicit_removal=true;state_->removal_options=options;
 }
 void OwnedEffectRequest::Start(void* entity,void* path) {
     StartImpl(entity,entity,path,nullptr);
@@ -199,20 +217,32 @@ void OwnedEffectRequest::Service() {
     if(!out.request_ended && out.reference.parameters)s.ObserveEnd();
     if(out.request_ended){s.Drain();return;}
     if(!out.cancelled || !out.submitted)return;
-    // Retry only on NEW evidence of a late successful load, not every frame or
-    // because Remove returned false. An in-flight completion never adopts the
+    // Retry on a changed explicit cancellation or NEW evidence of a late load,
+    // not every frame or because Remove returned false. A completion never adopts the
     // effect into a later action; the same old manager/reference owns removal.
-    if(out.removal_attempts && out.loaded_completions==s.removed_at_loaded && s.observed_loads==s.removed_at_observation)return;
+    if(out.removal_attempts && out.loaded_completions==s.removed_at_loaded && s.observed_loads==s.removed_at_observation && s.removal_revision==s.removed_revision)return;
+    s.removed_revision=s.removal_revision;
     s.removed_at_loaded=out.loaded_completions;
     s.removed_at_observation=s.observed_loads;
     ++out.removal_attempts;
     s.Trace("remove begin id="+std::to_string(out.reference.id)+" attempt="+std::to_string(out.removal_attempts));
-    out.removal=s.services.access.Remove(s.manager,out.reference,s.fade);
+    std::string removal_detail;
+    if(s.explicit_removal) {
+        out.removal={};
+        try {
+            if(s.actions.remove) {
+                const auto options=s.removal_options;
+                const auto result=s.actions.remove(s.manager,out.reference,options);
+                out.removal=result.removal;removal_detail=result.detail;
+            }else removal_detail="explicit removal provider unavailable";
+        }catch(const std::exception& e){removal_detail=e.what();}
+    }else out.removal=s.services.access.Remove(s.manager,out.reference,s.fade);
     s.Trace("remove returned="+std::to_string(out.removal.read.returned)+" matched="+std::to_string(out.removal.value)+
         " exception="+std::to_string(out.removal.read.exception));
     out.detail=out.removal.read.returned?(out.removal.value?
         "removal accepted; waiting for official release":"removal unmatched; responsibility remains unresolved"):
         "removal call failed; responsibility remains unresolved";
+    if(!removal_detail.empty()){out.detail+="; "+removal_detail;s.Trace("remove detail: "+removal_detail);}
     s.ReadSignals();s.ObserveEnd();
     if(out.request_ended)s.Drain();
 }

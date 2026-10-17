@@ -2,6 +2,7 @@
 #include "../../Export.hpp"
 #include "EffectControl.hpp"
 #include "EffectInputs.hpp"
+#include "EffectActions.hpp"
 #include <memory>
 #include <string>
 #include <vector>
@@ -20,6 +21,7 @@ public:
     explicit PresentationEffects(EffectRequestServices); // explicit low-level provider
     PresentationEffects(EffectRequestServices,EffectControlServices);
     PresentationEffects(EffectRequestServices,EffectControlServices,ConfigureEntityEffect);
+    PresentationEffects(EffectRequestServices,EffectControlServices,ConfigureEntityEffect,EffectActionServices);
     ~PresentationEffects();
     PresentationEffects(const PresentationEffects&)=delete;
     PresentationEffects& operator=(const PresentationEffects&)=delete;
@@ -31,6 +33,7 @@ public:
     EffectControlResult SetProgress(EffectReference,float progress,float transition_seconds=0) const;
     EffectControlResult SetAnimatorState(EffectReference,int state_hash,
         float normalized_transition_duration=0,bool restart=true) const;
+    EffectControlResult SetAnimatorTrigger(EffectReference,const std::string& name,bool reset=false) const;
 private:
     struct State;
     State* state_;

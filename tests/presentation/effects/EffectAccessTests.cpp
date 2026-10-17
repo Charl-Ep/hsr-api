@@ -48,9 +48,12 @@ void TestEffectAccess() {
     MetadataResolver metadata({extensions,service,params,strings});const auto methods=ResolveEffectAccess460(metadata);
     Check(methods.binding_errors.empty());EffectAccess api(methods);
     Check(api.MapPath(&entity,&path).object==&mapped);
-    // ID zero is a valid factory generation; not a null-handle sentinel.
+    // Observation can describe zero, but removal must not forward that value:
+    // the official removal filter treats it as an unrestricted ID.
     auto request=api.Acquire(&mapped);Check(request.call.returned && request.reference.id==0 && request.reference.parameters==&input);
     Check(api.Observe(request.reference).same_generation && !api.Observe(request.reference).released.value);
+    Check(!api.Remove(&manager,request.reference,true).read.returned && removed==0);
+    input.id=1;request=api.Acquire(&mapped);
     Check(api.Submit(&manager,request.reference).returned && submitted==1);
     Check(api.Remove(&manager,request.reference,true).value && removed==1 && released==0 && !input.released);
     // Request cancellation did not submit an extra Release call.

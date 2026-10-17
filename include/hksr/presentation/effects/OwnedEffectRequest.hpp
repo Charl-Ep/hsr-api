@@ -2,6 +2,7 @@
 #include <hksr/presentation/effects/EffectAccess.hpp>
 #include <hksr/presentation/effects/EffectCompletion.hpp>
 #include <hksr/presentation/effects/EffectInputs.hpp>
+#include <hksr/presentation/effects/EffectActions.hpp>
 #include <memory>
 #include <hksr/presentation/events/EventRegistrationLease.hpp>
 #include <hksr/animation/OfficialCatalog.hpp>
@@ -40,6 +41,7 @@ class HKSR_API OwnedEffectRequest {
 public:
     explicit OwnedEffectRequest(EffectRequestServices services);
     OwnedEffectRequest(EffectRequestServices,ConfigureEntityEffect);
+    OwnedEffectRequest(EffectRequestServices,ConfigureEntityEffect,EffectActionServices);
     ~OwnedEffectRequest();
     OwnedEffectRequest(const OwnedEffectRequest&)=delete;
     OwnedEffectRequest& operator=(const OwnedEffectRequest&)=delete;
@@ -54,6 +56,7 @@ public:
     // then drains only this object's partial roots, never touches the request.
     bool TrackSubmitted(void* retained_manager,api::EffectReference);
     void Cancel(bool fade=true);
+    void Cancel(EffectRemovalOptions);
     void Service();
     const EffectRequestStatus& Status() const;
 private:
