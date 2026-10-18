@@ -81,6 +81,31 @@ struct ActionConfigInput {
     TextInput elation_config;
     CatalogBatch<ElationReadyInput> elation_ready;
 };
+// Reference provenance, not an evaluated predicate or a copied object graph.
+// The enclosing document and skill index plus field locate the original input.
+// A null source is distinct from an unread field or an empty array.
+struct SkillObjectSource {
+    std::string field,declared_type;
+    ConfigValue<bool> present;
+    ConfigValue<std::int32_t> element_count; // arrays only
+};
+struct SkillTaskInput {
+    SkillInput skill;
+    ConfigValue<std::int32_t> use_type;
+    TextInput boost_skill;
+    SkillObjectSource usable_conditions,visible_condition,insert_condition,target;
+};
+struct SkillAbilityInput {
+    std::int32_t source_index=0;
+    TextInput skill;
+    TextArrayInput abilities;
+};
+struct TaskConfigInput {
+    ActionConfigInput actions;
+    std::vector<SkillTaskInput> skills;
+    CatalogBatch<SkillAbilityInput> skill_abilities;
+    std::vector<CatalogIssue> issues;
+};
 // Source declarations, not gameplay modifiers and not a name-based emotion map.
 // A missing field stays unavailable; an empty expression is a valid source value.
 struct VisualPhaseInput {
@@ -270,6 +295,10 @@ public:
     // Reads one explicit document. ReferenceJsonConfig/event lists are returned
     // as values; caller controls traversal/cache. No task execution or prefab load.
     ActionConfigInput ReadActionConfig(ActionConfigKind kind,const std::string& path);
+    // One battle document read, including skill ownership and condition/target
+    // provenance. Does not traverse abilities or evaluate gameplay predicates.
+    // Separate result keeps the existing ActionConfigInput binary layout intact.
+    TaskConfigInput ReadTaskConfig(const std::string& path);
     // Official fallback query only, no skill/component construction or playback.
     // Arguments are zero-based runtime skill indices; not SkillType, UI index,
     // or positions in a filtered menu. Null official result is a valid empty name.
@@ -306,6 +335,7 @@ public:
     // never repeated or hidden by a successful value snapshot.
     std::size_t UnresolvedReferences() const;
 private:
+    ActionConfigInput ReadActionConfigDetail(ActionConfigKind,const std::string&,TaskConfigInput*);
     struct State;
     std::shared_ptr<State>* owner_;
     State* state_;

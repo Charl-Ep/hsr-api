@@ -40,6 +40,8 @@ Writes are recorded before invocation. Retain an override after a partial failur
 
 ## Preparation relations
 
+`OfficialCatalog::ReadTaskConfig(path)` reads one battle character document. Its result retains the action configuration, every skill's use type and boost key, condition/target field provenance, and each `SkillAbilityList` row's owning skill key. Null references, unread fields and empty arrays remain distinct. It does not evaluate conditions or load ability graphs.
+
 `OfficialCatalog::BeginAbilitySources` reads task declarations on the official thread with a per-call time budget. `ProgressiveAbilitySourceRead::DrainCompleted` transfers fully traversed roots before the batch finishes; shared nodes remain cached across roots. `Done` includes reference cleanup, and `Take` returns undrained results. Cancellation discards undelivered values and drains retained references. A single native call cannot be interrupted by the budget.
 
 `FindPreparationSequences` examines each ability's straight `OnStart` list in an `AbilitySources` snapshot. It pairs a continuation with the nearest preceding mapping for the same control slot and retains intervening animation declarations. It preserves flags, targets, child indices and unread fields.

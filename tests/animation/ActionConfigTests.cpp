@@ -601,6 +601,40 @@ void TestActionConfig() {
     Check(movement.animations.size()==1 && movement.animations[0].kind==AnimationTaskKind::StateWithTargetList &&
         movement.animations[0].state.value=="Not_A_Character_Specific_Name" && movement.animations[0].target_alias.value=="Caster" &&
         movement.animations[0].enabled.value && !movement.animations[0].waits.available && roots.empty());
+    // The task query preserves ownership and reference provenance without
+    // traversing condition graphs or constructing gameplay components.
+    Field(skill,"UseType","RPG.GameCore.SkillUseType",6);
+    String(skill,"BoostSkill",L"Boosted");
+    Field(skill,"UsableConditions","RPG.GameCore.UsableConditionConfig[]",Array({New(),nullptr}));
+    Field(skill,"VisibleCondition","RPG.GameCore.PredicateConfig",static_cast<void*>(nullptr));
+    // InsertCondition intentionally unread; it must not become a null source.
+    Field(skill,"TargetInfo","RPG.GameCore.SkillTargetConfig",New());
+    String(group,"Skill",L"FollowUpCustom");
+    auto missing_owner=New();Strings(missing_owner,"AbilityList",Array({Text(L"Unowned")}));
+    auto empty_group=New();String(empty_group,"Skill",L"FollowUpCustom");Strings(empty_group,"AbilityList",Array({}));
+    for(const auto& f:config->fields)if(f.name=="SkillAbilityList") {
+        auto* groups=Array({group,nullptr,empty_group,missing_owner});
+        std::memcpy(reinterpret_cast<char*>(config)+f.offset,&groups,sizeof(groups));
+    }
+    const auto before_task_load=loads;
+    const auto tasks=catalog.ReadTaskConfig("battle");
+    Check(loads==before_task_load+1 && roots.empty() && tasks.actions.loaded && tasks.skills.size()==1);
+    const auto& task_input=tasks.skills.front();
+    Check(task_input.skill.source_index==1 && task_input.skill.name.value=="FollowUpCustom" && task_input.use_type.available && task_input.use_type.value==6);
+    Check(task_input.boost_skill.value=="Boosted" && task_input.usable_conditions.present.value && task_input.usable_conditions.element_count.value==2);
+    Check(task_input.usable_conditions.field=="SkillList[1].UsableConditions" && task_input.usable_conditions.element_count.available);
+    Check(task_input.visible_condition.present.available && !task_input.visible_condition.present.value && !task_input.visible_condition.element_count.available);
+    Check(!task_input.insert_condition.present.available && !task_input.insert_condition.present.error.empty() && task_input.target.present.value);
+    Check(tasks.skill_abilities.enumerated && tasks.skill_abilities.declared_count==4 && tasks.skill_abilities.rows.size()==3);
+    Check(tasks.skill_abilities.rows[0].skill.value=="FollowUpCustom" && tasks.skill_abilities.rows[0].abilities.values.size()==2);
+    Check(tasks.skill_abilities.rows[1].source_index==2 && tasks.skill_abilities.rows[1].abilities.available && tasks.skill_abilities.rows[1].abilities.values.empty());
+    Check(!tasks.skill_abilities.rows[2].skill.available && tasks.skill_abilities.rows[2].abilities.values[0]=="Unowned");
+    Check(tasks.issues.size()==2 && tasks.actions.abilities.size()==5); // missing owner does not discard abilities
+    for(const auto& f:skill->fields)if(f.name=="UsableConditions") {
+        auto* empty=Array({});std::memcpy(reinterpret_cast<char*>(skill)+f.offset,&empty,sizeof(empty));
+    }
+    const auto empty_conditions=catalog.ReadTaskConfig("battle");
+    Check(empty_conditions.skills[0].usable_conditions.present.value && empty_conditions.skills[0].usable_conditions.element_count.value==0);
     nodes.clear(); documents.clear();
     reflected_type=reflected_field=nullptr;
     helper_type=nullptr;helper_values.clear();
