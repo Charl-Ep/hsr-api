@@ -78,6 +78,8 @@ Commands require current entities from the same client and world, with the partn
 
 Creation receipts cover both `CreateEmptyEntity` and `_CreateNewEntityImpl`, including synchronous explicit-ID auxiliary entities. Nested returns of the same live object produce one birth. These scopes do not attribute unrelated asynchronous creations.
 
+The context's Partner factory removes each owned group's `LevelCharacterDie` callback before disposal, including disposal inside the factory call. Removal uses the group's exact target and callback method; it neither fires a death event nor clears other listeners. Failures are recorded in `Status().errors` and do not suppress official disposal. Low-level sessions constructed without the context do not install this adapter.
+
 ## Event construction observations
 
 Prepare `CreateEventConstructionObserver` before model creation and activate it on the owner thread. It shares the construction hook with `AnimationEventPolicy`; `before` receives the final inputs after all active policies. Baseline and inline events may have null registration and file references.

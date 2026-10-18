@@ -42,6 +42,7 @@ public:
 private:
     friend class PresentationContext;
     void PrepareStoryRuntime(RuntimeMetadata&);
+    void PreparePartnerRuntime(RuntimeMetadata&);
     void CreateOwned(GameWorld*,EntityManager*,bool require_birth,const std::function<CreateEntityResult()>&);
     struct State;
     State* state_;

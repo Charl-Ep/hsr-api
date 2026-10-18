@@ -13,6 +13,7 @@ struct EntityToken {
 // Provenance is not permission to invoke a retired entity/world. The world
 // pointer is an identity captured at creation, not a later live getter result.
 struct EntityOrigin {EntityToken token;GameWorld* world=nullptr;};
+struct EntityDisposalNotice {unsigned invoked=0,failed=0,wrong_thread=0;};
 struct CreationReceipt {
     std::vector<GameEntity*> entities;
     std::vector<GameEntity*> disposed_entities;
@@ -38,6 +39,7 @@ class HKSR_API EntityCreationScope {
 public:
     using BirthObserver=std::function<void(EntityOrigin)>;
     explicit EntityCreationScope(GameWorld* world,const void* owner=nullptr,BirthObserver observe={});
+    EntityCreationScope(GameWorld*,const void* owner,BirthObserver observe,BirthObserver before_dispose);
     ~EntityCreationScope();
     EntityCreationScope(const EntityCreationScope&) = delete;
     EntityCreationScope& operator=(const EntityCreationScope&) = delete;
@@ -54,6 +56,9 @@ public:
     // Adapter hooks call this only after native entity creation returns normally.
     // Nested wrappers for the same live object produce one birth notification.
     static void FactoryCompleted(GameWorld* world, GameEntity* entity) noexcept;
+    // Before the outer factory returns, disposal still belongs to its exact
+    // creation receipt. Called by the existing Dispose hook, once per birth.
+    static EntityDisposalNotice DisposalStarting(GameEntity*) noexcept;
     // A factory may create, then dispose, before returning/throwing. Preserve
     // that outcome even before the Framework can register the returned object.
     static void DisposalCompleted(GameEntity* entity) noexcept;
@@ -62,7 +67,6 @@ private:
     State* state_;
 };
 
-struct EntityDisposalNotice {unsigned invoked=0,failed=0,wrong_thread=0;};
 using EntityDisposalSubscription=std::uint64_t;
 // Product state, independent of capture enablement. Completed disposal is
 // published only after the original returns. Before-disposal observers run

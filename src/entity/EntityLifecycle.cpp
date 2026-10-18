@@ -22,11 +22,21 @@ struct EntityCreationScope::State {
     const void* owner;
     CreationReceipt receipt;
     std::map<GameEntity*,std::uint64_t> births;
-    BirthObserver observe;
+    std::map<GameEntity*,std::uint64_t> retiring;
+    BirthObserver observe,before_dispose;
+    bool NotifyCpp(EntityOrigin origin) noexcept {
+        try {before_dispose(origin);return true;}catch(...){return false;}
+    }
+    bool Notify(EntityOrigin origin) noexcept {
+        __try{return NotifyCpp(origin);}
+        __except(EXCEPTION_EXECUTE_HANDLER){return false;}
+    }
 };
 thread_local EntityCreationScope::State* EntityCreationScope::State::current = nullptr;
 EntityCreationScope::EntityCreationScope(GameWorld* world,const void* owner,BirthObserver observe)
-    : state_(new State{State::current, world, owner, {}, {},std::move(observe)}) {
+    :EntityCreationScope(world,owner,std::move(observe),{}){}
+EntityCreationScope::EntityCreationScope(GameWorld* world,const void* owner,BirthObserver observe,BirthObserver before_dispose)
+    : state_(new State{State::current, world, owner, {}, {},{},std::move(observe),std::move(before_dispose)}) {
     State::current = state_;
 }
 EntityCreationScope::~EntityCreationScope() {
@@ -85,6 +95,25 @@ void EntityCreationScope::DisposalCompleted(GameEntity* entity) noexcept {
             if (std::find(disposed.begin(), disposed.end(), entity) == disposed.end()) disposed.push_back(entity);
         } catch (...) { state->receipt.incomplete = true; }
     }
+}
+EntityDisposalNotice EntityCreationScope::DisposalStarting(GameEntity* entity) noexcept {
+    EntityDisposalNotice result;
+    for(auto* state=State::current;state;state=state->previous) {
+        const auto birth=state->births.find(entity);
+        if(birth==state->births.end())continue;
+        const auto& disposed=state->receipt.disposed_entities;
+        if(std::find(disposed.begin(),disposed.end(),entity)!=disposed.end())return result;
+        if(!state->before_dispose)return result; // never borrow another scope's handler
+        try {
+            const auto prior=state->retiring.find(entity);
+            if(prior!=state->retiring.end() && prior->second==birth->second)return result;
+            state->retiring.insert_or_assign(entity,birth->second);
+            ++result.invoked;
+            if(!state->Notify({{entity,birth->second},state->world}))++result.failed;
+        }catch(...){++result.failed;}
+        return result;
+    }
+    return result;
 }
 
 struct EntityLifecycle::State {

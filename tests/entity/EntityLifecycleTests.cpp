@@ -19,6 +19,26 @@ GameEntity* __fastcall PartialFactory(EntityManager*, MapNpcDefinition*, NpcData
 }
 void TestEntityLifecycle() {
     int owner,other_owner;
+    {
+        unsigned cleaned=0;EntityToken prior;
+        EntityCreationScope outer(W,&owner,{},[&](auto origin){
+            Check(origin.world==W && origin.token.entity==A && origin.token.generation!=prior.generation);
+            prior=origin.token;++cleaned;
+            Check(EntityCreationScope::DisposalStarting(A).invoked==0);
+        });
+        EntityCreationScope::FactoryCompleted(W,A);
+        {
+            EntityCreationScope nested(W,&other_owner,{},[](auto){throw std::runtime_error("must not borrow nested cleanup");});
+            Check(EntityCreationScope::DisposalStarting(A).invoked==1 && cleaned==1);
+        }
+        Check(EntityCreationScope::DisposalStarting(A).invoked==0);
+        EntityCreationScope::DisposalCompleted(A);EntityCreationScope::FactoryCompleted(W,A);
+        Check(EntityCreationScope::DisposalStarting(A).invoked==1 && cleaned==2);
+        Check(EntityCreationScope::DisposalStarting(B).invoked==0);
+        EntityCreationScope nested(W,&other_owner,{},[](auto){throw std::runtime_error("cleanup error does not veto disposal");});
+        EntityCreationScope::FactoryCompleted(W,B);
+        const auto failed=EntityCreationScope::DisposalStarting(B);Check(failed.invoked==1 && failed.failed==1);
+    }
     EntityLifecycle adopted;
     EntityToken born;
     {

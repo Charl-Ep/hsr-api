@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <sstream>
+#include "PartnerEventCleanup.hpp"
 
 namespace hksr::sdk_v1 {
 struct EntityCreationSession::State {
@@ -30,6 +31,8 @@ struct EntityCreationSession::State {
     GameWorld* world = nullptr;
     EntityToken summoner;
     EntityCreationScope::BirthObserver observe_birth;
+    std::unique_ptr<detail::PartnerEventCleanup> partner_cleanup;
+    std::vector<EntityDisposalSubscription> disposal_observers;
     State(const EntityOwner& client,Method create,Method story_method,ManagedObjects* managed,EntityAccessMethods methods,ReferenceMethods references,EntityCreationScope::BirthObserver observer,Method partner)
         :owner(client),factory(create),story_factory(story_method),partner_factory(partner),objects(managed),references(references),access(std::move(methods)),roots(references),observe_birth(std::move(observer)) {}
     bool SummonerLive(EntityToken token) const {
@@ -45,9 +48,14 @@ struct EntityCreationSession::State {
         return roots.Status(id).ready;
     }
     void ReleaseRoots() {
-        bool complete = true;
+        bool complete = !partner_cleanup || partner_cleanup->Close();
         for (const auto id : handles) if (id && !roots.Release(id).complete) complete = false;
         status.closed = complete;
+    }
+    void BeforeDispose(EntityOrigin origin) {
+        if(!partner_cleanup)return;
+        const auto result=partner_cleanup->Remove(origin);
+        if(!result.returned)status.errors.push_back("partner subscription cleanup: "+result.error);
     }
     void FinishDisposed() {
         bool complete = true;
@@ -67,9 +75,16 @@ struct EntityCreationSession::State {
 EntityCreationSession::EntityCreationSession(const EntityOwner& owner,Method factory,Method story,ManagedObjects* objects,EntityAccessMethods access,ReferenceMethods references,EntityCreationScope::BirthObserver observer,Method partner)
     :state_(new State(owner,factory,story,objects,std::move(access),references,std::move(observer),partner)) {}
 EntityCreationSession::~EntityCreationSession() {
+    for(auto id:state_->disposal_observers)TrackedEntities().CancelBeforeDispose(id);
     if(state_->emotion_boundary)state_->emotion_boundary->Stop();
     if(state_->outfit_boundary)state_->outfit_boundary->Stop();
     delete state_;
+}
+void EntityCreationSession::PreparePartnerRuntime(RuntimeMetadata& metadata) {
+    auto& s=*state_;
+    const auto methods=detail::ResolvePartnerEventCleanup460(metadata,
+        metadata.ReadFields("RPG.GameCore","GameComponentBase",false),metadata.ReadFields("RPG.GameCore","GameWorld",false));
+    s.partner_cleanup=std::make_unique<detail::PartnerEventCleanup>(s.owner,methods,s.references,*s.objects);
 }
 void EntityCreationSession::PrepareStoryRuntime(RuntimeMetadata& metadata) {
     OperationSpan timing("sdk.creation.bindings");
@@ -185,7 +200,8 @@ void EntityCreationSession::CreateOwned(GameWorld* world,EntityManager* manager,
     if(!s.Keep(world) || !s.Keep(manager)) {
         s.status.errors.push_back("creation inputs could not all be retained");s.ReleaseRoots();return;
     }
-    EntityCreationScope scope(world,s.owner.Identity(),s.observe_birth);
+    EntityCreationScope scope(world,s.owner.Identity(),s.observe_birth,
+        s.partner_cleanup?EntityCreationScope::BirthObserver([&s](auto origin){s.BeforeDispose(origin);}):EntityCreationScope::BirthObserver{});
     s.constructing=true;
     try {s.status.factory=create();}
     catch(const std::exception& e){s.status.errors.push_back(e.what());}
@@ -217,6 +233,10 @@ void EntityCreationSession::CreateOwned(GameWorld* world,EntityManager* manager,
         }
         const auto token = TrackedEntities().Track(entity,s.owner.Identity());
         s.status.entities.push_back({token, {}, {}, false, false});
+        if(s.partner_cleanup) {
+            s.disposal_observers.reserve(s.disposal_observers.size()+1);
+            s.disposal_observers.push_back(TrackedEntities().BeforeDispose(token,[&s](auto value){s.BeforeDispose({value,s.world});}));
+        }
         if (!s.Keep(entity)) {
             s.status.errors.push_back("new entity GC retention failed; disposal responsibility retained");
             s.status.removal_requested = true;

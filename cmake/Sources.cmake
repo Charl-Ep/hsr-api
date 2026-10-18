@@ -15,6 +15,7 @@ set(HKSR_API_SOURCES
     # adapters/entity
     adapters/entity/EntityAccessMethods.cpp
     adapters/entity/EntityMethods.cpp
+    adapters/entity/PartnerEventMethods.cpp
 
     # adapters/managed
     adapters/managed/ArrayMethods.cpp
@@ -78,6 +79,7 @@ set(HKSR_API_SOURCES
     src/entity/EntityFactory.cpp
     src/entity/EntityLifecycle.cpp
     src/entity/EntityOwner.cpp
+    src/entity/PartnerEventCleanup.cpp
     src/entity/EntityProvenance.cpp
     src/entity/LifecycleHooks.cpp
     src/entity/MapNpcInputs.cpp

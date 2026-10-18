@@ -64,12 +64,20 @@ void TestLifecycleHooks(){
     Check(dispose_calls==2 && tracked.IsDisposed(token));
     Check(observed==1);inside_dispose={};
     tracked.Forget(token);
+    {
+        unsigned cleaned=0;auto calls=dispose_calls;
+        EntityCreationScope scope(world,nullptr,{},[&](auto origin){
+            Check(origin.token.entity==entity && origin.world==world && dispose_calls==calls);++cleaned;
+        });
+        NativeCreate(world,4,4,&method_info);
+        Check(TryDispose() && cleaned==1 && scope.Receipt().Unique()==nullptr);
+    }
     RemoveEntityLifecycleHooksAtQuiescentPoint();
     {
         EntityCreationScope receipt(world);
         Check(NativeCreate(world,4,4,&method_info)==entity);
         Check(NativeCreateNew(world,78,4,18,&method_info)==anchor);
-        Check(create_calls==2 && receipt.Receipt().entities.empty());
+        Check(create_calls==3 && receipt.Receipt().entities.empty());
     }
     // A later installation is explicit and works without duplicate hooks.
     InstallEntityLifecycleHooks(resolver);

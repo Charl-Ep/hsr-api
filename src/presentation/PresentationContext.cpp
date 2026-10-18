@@ -275,8 +275,10 @@ PresentationContext::EntityFactory PresentationContext::Partners() const {
     Method partner;
     if(s->metadata)partner=ResolvePartnerFactory(*s->metadata);
     return [s,partner,observer=BirthObserver()] {
-        return std::make_unique<EntityCreationSession>(s->owner,Method{},Method{},&s->objects,
+        auto session=std::make_unique<EntityCreationSession>(s->owner,Method{},Method{},&s->objects,
             s->bindings.entity,s->bindings.references,observer,partner);
+        if(s->metadata)session->PreparePartnerRuntime(*s->metadata);
+        return session;
     };
 }
 std::unique_ptr<PartnerControlSession> PresentationContext::PartnerControls(EntityToken partner,EntityToken summoner,GameWorld* world) const {
