@@ -31,7 +31,9 @@ Call `PresentationContext::Create(metadata, capabilities, policy, trace)` from `
 
 Resource references require their provider to remain alive. Factories retain native context state beyond the wrapper's lifetime. Sharing a provider does not merge resource owners or retain borrowed game objects.
 
-Activate the context on the official frame before creating owned entities. `CreateAnimationPolicy` applies task policy on that frame; its default restricts camera noise and confines head-look event targets to the owned entity. Optional services may be unavailable independently.
+Activate the context on the official frame before creating owned entities. `CreateAnimationPolicy` restricts camera noise and external head-look targets, and excludes the qualified shared input-lock and world-time tasks from owned animation events. Global intensity tasks follow `allow_timeline_environment`. Official entities keep their original inputs. Optional services may be unavailable independently.
+
+Task ancestry is resolved across namespaces. Unreadable branches retain their original references and are reported as `uninspected`; independently readable branches still receive policy edits. Copy or write failure leaves the original inputs unchanged. These diagnostics indicate incomplete isolation, not a verified safe configuration.
 
 Contexts share process-resident hooks and ownership records. Each client has its own policy and diagnostic sink; records are keyed by world, entity and generation. Retired clients' pending effects retain the policy needed to finish.
 

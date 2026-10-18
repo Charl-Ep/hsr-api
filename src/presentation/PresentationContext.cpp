@@ -23,6 +23,7 @@
 #include <hksr/presentation/effects/EffectTriggerSource.hpp>
 #include <hksr/presentation/events/AnimationExitConfig.hpp>
 #include <hksr/presentation/events/AnimationEventPolicy.hpp>
+#include "events/OwnedAnimationTaskRules.hpp"
 #include <hksr/presentation/events/AnimationEventConstruction.hpp>
 #include <hksr/presentation/events/AnimationSequenceExecutions.hpp>
 #include <hksr/presentation/events/AnimationEventDefinitions.hpp>
@@ -49,6 +50,7 @@ struct PresentationContext::State {
     RuntimeMetadata* metadata=nullptr;
     bool prepared=false;
     PresentationIsolationStatus isolation_status;
+    PresentationIsolationPolicy isolation_policy;
     Trace trace;
     std::unique_ptr<PresentationIsolation> isolation;
     std::unique_ptr<EffectInputs> effect_inputs;
@@ -307,7 +309,7 @@ void PresentationContext::Prepare(RuntimeMetadata& metadata,RuntimeCapabilities 
     PresentationIsolationPolicy policy,Trace trace) {
     auto& s=*storage_->state;
     if(s.prepared)throw std::logic_error("presentation context already prepared");
-    s.prepared=true;s.trace=std::move(trace);
+    s.prepared=true;s.trace=std::move(trace);s.isolation_policy=policy;
     try {InstallMovementPlacement(s.bindings.actor_control);}
     catch(const std::exception& e){s.Log(std::string("movement placement unavailable: ")+e.what());}
     try {
@@ -474,9 +476,8 @@ std::unique_ptr<AnimationSequenceExecutions> PresentationContext::CreateSequence
 std::unique_ptr<AnimationEventPolicy> PresentationContext::CreateAnimationPolicy(AnimationTaskPolicy policy) const {
     const auto s=storage_->state;
     if(!s->metadata)throw std::logic_error("animation policy requires a prepared runtime context");
-    std::vector<std::string> disabled;
+    auto disabled=detail::DisabledOwnedAnimationTasks(policy,s->isolation_policy);
     std::vector<SelfPerformerRule> performers;
-    if(!policy.allow_camera_noise)disabled.emplace_back("RPG.GameCore.VCameraNoiseChange");
     if(policy.constrain_head_look_to_owner)performers.push_back({"RPG.GameCore.HeadLookAt","PerformerType"});
     auto& metadata=*s->metadata;
     return std::make_unique<AnimationEventPolicy>(metadata,metadata,metadata,metadata,

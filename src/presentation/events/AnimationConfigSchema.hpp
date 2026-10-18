@@ -5,7 +5,8 @@
 
 namespace hksr::sdk_v1::detail {
 // Follows DECLARATION relationships to tasks, not runtime entity references.
-// Rank-one reference arrays and RPG.GameCore configuration records only.
+// Rank-one reference arrays and configuration records. TaskConfig/JsonConfig
+// descendants may live outside RPG.GameCore, including the empty namespace.
 // Value types, strings, Unity objects and generic containers are not traversed.
 // Generic containers of TaskConfig are reported as unsupported, not silently
 // represented as an empty task list. No names/offsets from a captured instance.
@@ -37,9 +38,19 @@ private:
     Disable conditional_;
     std::map<std::string,std::vector<DeclaredField>> fields_;
     std::map<std::string,bool> reaches_task_;
+    std::map<std::string,bool> candidates_,tasks_;
     static std::string Element(std::string type) {
         if(type.size()>2 && type.compare(type.size()-2,2,"[]")==0)type.resize(type.size()-2);
+        if(type.find('.')==std::string::npos)type.insert(0,".");
         return type;
+    }
+    bool Derives(const std::string& name,const char* ns,const char* base) {
+        const auto dot=name.rfind('.');
+        return relationships_.TypeDerivesFrom(name.substr(0,dot).c_str(),name.substr(dot+1).c_str(),ns,base);
+    }
+    bool Task(const std::string& name) {
+        const auto found=tasks_.find(name);if(found!=tasks_.end())return found->second;
+        return tasks_.emplace(name,Derives(name,"RPG.GameCore","TaskConfig")).first->second;
     }
     const std::vector<DeclaredField>& Fields(const std::string& name) {
         const auto found=fields_.find(name);if(found!=fields_.end())return found->second;
@@ -52,8 +63,12 @@ private:
                 throw std::runtime_error("unsupported task configuration container: "+name);
             return false;
         }
-        if(name.compare(0,13,"RPG.GameCore.")!=0 || name.find_first_of("[]&*")!=std::string::npos)return false;
-        return !relationships_.TypeDerivesFrom("RPG.GameCore",name.substr(13).c_str(),"System","ValueType");
+        if(name.find_first_of("[]&*")!=std::string::npos)return false;
+        const auto found=candidates_.find(name);if(found!=candidates_.end())return found->second;
+        const bool candidate=Task(name) ||
+            ((name.compare(0,13,"RPG.GameCore.")==0 || Derives(name,"RPG.GameCore","JsonConfig")) &&
+             !Derives(name,"System","ValueType"));
+        return candidates_.emplace(name,candidate).first->second;
     }
     bool HasTasks(const std::string& field_type) {
         const auto root=Element(field_type);
@@ -68,7 +83,7 @@ private:
             const auto current=pending[i];
             auto cached=reaches_task_.find(current);
             if(cached!=reaches_task_.end()) {if(cached->second)positive.insert(current);continue;}
-            if(relationships_.TypeDerivesFrom("RPG.GameCore",current.substr(13).c_str(),"RPG.GameCore","TaskConfig")) {
+            if(Task(current)) {
                 positive.insert(current);continue;
             }
             for(const auto& field:Fields(current)) {

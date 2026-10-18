@@ -1,4 +1,5 @@
 #include "../../../src/presentation/events/ManagedConfigProjection.hpp"
+#include "../../../src/presentation/events/OwnedAnimationTaskRules.hpp"
 #include <hksr/presentation/events/AnimationEventPolicy.hpp>
 #include <hksr/presentation/events/AnimationEventConstruction.hpp>
 #include <hksr/entity/EntityLifecycle.hpp>
@@ -32,6 +33,10 @@ void *last_logic=nullptr,*last_context=nullptr,*last_registration=nullptr,*last_
 Obj* last_events=nullptr;
 void Check(bool ok) {if(!ok)throw std::runtime_error("managed configuration projection test failed");}
 Obj* New(const std::string& type) {auto p=std::make_unique<Obj>();p->type=type;auto* raw=p.get();arena.push_back(std::move(p));return raw;}
+bool GameTask(const std::string& name) {
+    return name=="TaskConfig" || name=="VCameraNoiseChange" || name=="HeadLookAt" ||
+        name=="GlobalTimeSlow" || name=="RemoveGlobalTimeSlow" || name=="GlobalMainIntensityEffect";
+}
 template<class T>Method M(T f){return {reinterpret_cast<void*>(f),&info};}
 int __fastcall Keep(void* p,int,int,void*){roots[++serial]=p;return serial;}
 void* __fastcall Target(int id,void*){return roots.at(id);}
@@ -97,10 +102,12 @@ struct Provider:MethodResolver,ObjectMetadata,ManagedObjects,TypeRelationships {
     }
     DeclaredType ReadObjectType(void* p) override {
         auto* o=static_cast<Obj*>(p);
+        if(o->type=="ObfuscatedTask")return {"",o->type,{}};
+        if(o->type=="AdventureGameplayLockWithDelay")return {"RPG.Client",o->type,{}};
         if(o->type=="Field")return {"Fixture","Field",{
             {"GetValue","System.Object",{"System.Object"},false,M(Get)},
             {"SetValue","System.Void",{"System.Object","System.Object","System.Reflection.BindingFlags","System.Reflection.Binder","System.Globalization.CultureInfo"},false,M(Set)}}};
-        const bool game=o->type=="SingleAnimEventConfig" || o->type=="SingleAnimEventConfig[]" || o->type=="VCameraNoiseChange" || o->type=="TaskConfig[]" || o->type=="HeadLookAt" || o->type=="TargetAlias";
+        const bool game=GameTask(o->type) || o->type=="SingleAnimEventConfig" || o->type=="SingleAnimEventConfig[]" || o->type=="TaskConfig[]" || o->type=="TargetAlias";
         return {o->type=="Boolean"?"System":game?"RPG.GameCore":"Fixture",o->type,{}};
     }
     std::vector<DeclaredField> ReadObjectFields(void* p) override {
@@ -112,15 +119,19 @@ struct Provider:MethodResolver,ObjectMetadata,ManagedObjects,TypeRelationships {
     ObjectResult AllocateObject(const char* ns,const char* type) override {
         Check(std::string(ns)=="System" && std::string(type)=="Boolean");auto* o=New(type);o->enabled=false;return {{true,0},o};
     }
-    bool TypeDerivesFrom(const char*,const char* name,const char*,const char* base) override {
-        return std::string(base)=="TaskConfig" && (std::string(name)=="TaskConfig" || std::string(name)=="VCameraNoiseChange" || std::string(name)=="HeadLookAt");
+    bool TypeDerivesFrom(const char* ns,const char* name,const char*,const char* base) override {
+        const auto full=std::string(ns)+"."+name;
+        return std::string(base)=="TaskConfig" && ((std::string(ns)=="RPG.GameCore" && GameTask(name)) ||
+            full==".ObfuscatedTask" || full=="RPG.Client.AdventureGameplayLockWithDelay");
     }
     std::vector<DeclaredField> Schema(const char*,const char* name) {
         if(std::string(name)=="SingleAnimEventConfig")return {{"RPG.GameCore",name,"EventList","RPG.GameCore.TaskConfig[]",0,6,true}};
         if(std::string(name)=="TargetEvaluator")return {};
         if(std::string(name)=="HeadLookAt")return {{"RPG.GameCore",name,"PerformerType","RPG.GameCore.TargetEvaluator",offsetof(Obj,reference),6,true},
             {"RPG.GameCore","TaskConfig","TaskEnabled","System.Boolean",0,6,true}};
-        Check(std::string(name)=="VCameraNoiseChange");return {{"RPG.GameCore","TaskConfig","TaskEnabled","System.Boolean",0,6,true}};
+        if(std::string(name)=="ObfuscatedTask" || std::string(name)=="AdventureGameplayLockWithDelay")
+            return {{"RPG.GameCore","TaskConfig","TaskEnabled","System.Boolean",0,6,true}};
+        Check(GameTask(name));return {{"RPG.GameCore","TaskConfig","TaskEnabled","System.Boolean",0,6,true}};
     }
 };
 ConfigObjectShape Shape(void*,const DeclaredType& type) {
@@ -187,7 +198,7 @@ void TestManagedConfigProjection() {
         [&](const auto& text){log.push_back(text);});
     AnimationEventPolicy policy(provider,provider,provider,provider,[&](auto* ns,auto* name){return provider.Schema(ns,name);},refs,
         [&](GameEntity* e){return EntityCreationScope::ContainsOwned(e,&owner_tag);},
-        [&](const auto& line){log.push_back(line);},{"RPG.GameCore.VCameraNoiseChange"},{{"RPG.GameCore.HeadLookAt","PerformerType"}});
+        [&](const auto& line){log.push_back(line);},DisabledOwnedAnimationTasks({},{}),{{"RPG.GameCore.HeadLookAt","PerformerType"}});
     EntityCreationScope creation(reinterpret_cast<GameWorld*>(&world),&owner_tag);
     EntityCreationScope::FactoryCompleted(reinterpret_cast<GameWorld*>(&world),entity);
     Check(InvokeConstruction(event_array,&actor,&file)==0 && last_events==event_array && caster_calls==0);
@@ -204,6 +215,23 @@ void TestManagedConfigProjection() {
     Check(roots.empty() && camera->enabled && log.back().find("original_returned=0")!=std::string::npos);
     fail_set=true;Check(InvokeConstruction(event_array,&actor,&file)==0 && last_events==event_array && roots.empty());
     Check(log.back().find("projection failed; original inputs forwarded")!=std::string::npos);
+    auto* obfuscated=New("ObfuscatedTask");auto* lock_task=New("AdventureGameplayLockWithDelay");
+    auto* slow=New("GlobalTimeSlow");auto* slow_remove=New("RemoveGlobalTimeSlow");auto* intensity=New("GlobalMainIntensityEffect");
+    config_tasks->items={camera,obfuscated,lock_task,slow,slow_remove,intensity};
+    Check(InvokeConstruction(event_array,&actor,&file)==0 && last_events!=event_array && roots.empty());
+    const auto& projected_tasks=last_events->items[0]->fields.at("EventList")->items;
+    Check(!projected_tasks[0]->enabled && projected_tasks[1]==obfuscated && !projected_tasks[2]->enabled);
+    Check(!projected_tasks[3]->enabled && !projected_tasks[4]->enabled && !projected_tasks[5]->enabled);
+    Check(camera->enabled && obfuscated->enabled && lock_task->enabled && slow->enabled && slow_remove->enabled && intensity->enabled);
+    Check(InvokeConstruction(event_array,&foreign,&file)==0 && last_events==event_array && camera->enabled && lock_task->enabled);
+    Check(slow->enabled && slow_remove->enabled && intensity->enabled);
+    // Unsupported branch is diagnosed without rolling back the camera edit.
+    auto* opaque=New("Opaque");config_tasks->items={opaque,camera};
+    Check(InvokeConstruction(event_array,&actor,&file)==0 && last_events!=event_array && roots.empty());
+    Check(last_events->items[0]->fields.at("EventList")->items[0]==opaque &&
+        !last_events->items[0]->fields.at("EventList")->items[1]->enabled && camera->enabled);
+    Check(log.back().find("uninspected=1")!=std::string::npos);
+    Check(InvokeConstruction(event_array,&foreign,&file)==0 && last_events==event_array && roots.empty());
     auto* look=New("HeadLookAt");auto* alias=New("TargetAlias");auto* alias_text=New("String");alias_text->name="AllEnemy";
     look->reference=alias;alias->reference=alias_text;config_tasks->items={look};
     Check(InvokeConstruction(event_array,&actor,&file)==0 && !last_events->items[0]->fields.at("EventList")->items[0]->enabled);

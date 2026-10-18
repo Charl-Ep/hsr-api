@@ -7,7 +7,7 @@ namespace {
 using namespace hksr::sdk_v1::detail;
 void Check(bool value) { if (!value) throw std::runtime_error("config projection test failed"); }
 struct Config {
-    bool enabled = true, block = false;
+    bool enabled = true, block = false, unreadable = false;
     int payload = 47;
     std::vector<Config*> children;
 };
@@ -17,6 +17,7 @@ struct Access : ConfigProjectionAccess {
     bool bad_copy = false, fail_write = false;
     ConfigView Inspect(void* source) override {
         ++reads;auto& c = *static_cast<Config*>(source);
+        if(c.unreadable)throw std::runtime_error("fixture branch unreadable");
         ConfigView out;out.disable_task = c.enabled && c.block;
         for (std::size_t i = 0; i < c.children.size(); ++i) out.edges.push_back({i, c.children[i]});
         return out;
@@ -70,6 +71,14 @@ void TestConfigProjection() {
     Access partial;partial.fail_write=true;failed=false;
     try { ProjectConfig({&root},partial); } catch(const std::exception&) { failed=true; }
     Check(failed && leaf.enabled && root.children[0]==&a && branch.children[0]==&leaf);
+    Config unreadable;unreadable.unreadable=true;unreadable.children={&kept};
+    Config mixed;mixed.children={&unreadable,&leaf};Access independent;
+    const auto isolated=ProjectConfig({&mixed},independent);
+    auto* mixed_copy=static_cast<Config*>(isolated.roots[0]);
+    Check(isolated.uninspected.size()==1 && isolated.uninspected[0].source==&unreadable);
+    Check(isolated.inspected==2 && isolated.copied==2 && isolated.disabled==1);
+    Check(mixed_copy!=&mixed && mixed_copy->children[0]==&unreadable && !mixed_copy->children[1]->enabled);
+    Check(mixed.children[1]==&leaf && leaf.enabled);
     Access empty;Check(ProjectConfig({nullptr},empty).inspected==0 && empty.reads==0);
     std::cout << "Config projection passed: selective copies, original immutability, shared references, cycles, nulls and failed publication. Synthetic data only.\n";
 }

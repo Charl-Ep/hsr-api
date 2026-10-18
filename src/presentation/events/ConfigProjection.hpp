@@ -1,7 +1,9 @@
 #pragma once
 #include <cstddef>
 #include <map>
+#include <new>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace hksr::sdk_v1::detail {
@@ -23,8 +25,11 @@ struct ConfigProjectionAccess {
 struct ConfigProjection {
     std::vector<void*> roots;
     std::size_t inspected = 0, copied = 0, disabled = 0;
+    struct Uninspected {void* source;std::string error;};
+    std::vector<Uninspected> uninspected;
 };
 inline ConfigProjection ProjectConfig(const std::vector<void*>& roots, ConfigProjectionAccess& access) {
+    ConfigProjection out;
     struct Node {
         ConfigView view;
         std::vector<void*> parents;
@@ -42,7 +47,14 @@ inline ConfigProjection ProjectConfig(const std::vector<void*>& roots, ConfigPro
     for (std::size_t i = 0; i < pending.size(); ++i) {
         auto* object = pending[i];
         auto& node = nodes.at(object);
-        node.view = access.Inspect(object);
+        try {node.view = access.Inspect(object);}
+        catch(const std::bad_alloc&){throw;}
+        catch(const std::exception& e) {
+            // This branch remains the original object. A failed inspection
+            // must not cancel independently established edits in its siblings.
+            // It is reported as uninspected, never certified as policy-safe.
+            out.uninspected.push_back({object,e.what()});continue;
+        }
         for (const auto& edge : node.view.edges) {
             if (!edge.target) continue;
             discover(edge.target);
@@ -67,7 +79,7 @@ inline ConfigProjection ProjectConfig(const std::vector<void*>& roots, ConfigPro
             throw std::runtime_error("configuration copier returned a source or reused copy identity");
         nodes.at(source).copy = copy;
     }
-    ConfigProjection out; out.inspected = nodes.size(); out.copied = changed.size();
+    out.inspected = nodes.size()-out.uninspected.size(); out.copied = changed.size();
     // All destinations exist before rewiring, so aliases/cycles retain their
     // identity relations. Unchanged subgraphs keep their original references.
     for (auto* source : changed) {

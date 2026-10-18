@@ -92,7 +92,13 @@ struct AnimationEventPolicy::State {
             invocation->projection=std::make_unique<detail::ManagedConfigProjection>(s.methods,s.metadata,s.objects,s.references,s.arrays,
                 [&s](void* value,const auto& type){return s.schema.Describe(value,type);});
             invocation->result=invocation->projection->Apply({args.events,args.behaviors,args.groups});
-            // Publish the complete private graph atomically at the call boundary.
+            for(const auto& unresolved:invocation->result.uninspected) {
+                std::ostringstream line;line<<"uninspected branch retained source="<<invocation->file
+                    <<" object="<<unresolved.source<<" error="<<unresolved.error;
+                s.Log(line.str());
+            }
+            // Publish the rewired graph atomically. Uninspected branches keep
+            // their original references and remain explicitly unqualified.
             // Logic, Context, registration and source filename stay unchanged.
             args.events=invocation->result.roots[0];args.behaviors=invocation->result.roots[1];args.groups=invocation->result.roots[2];
             return invocation.release();
@@ -109,6 +115,7 @@ struct AnimationEventPolicy::State {
             try {
                 std::ostringstream line;line<<"entity="<<invocation->entity<<" inspected="<<invocation->result.inspected
                     <<" copied="<<invocation->result.copied<<" disabled="<<invocation->result.disabled
+                    <<" uninspected="<<invocation->result.uninspected.size()
                     <<" source="<<invocation->file
                     <<" original_returned="<<!abnormal<<" elapsed_ms="<<(GetTickCount64()-invocation->started);
                 s.Log(line.str());
