@@ -31,6 +31,7 @@ set(HKSR_API_SOURCES
     adapters/presentation/EffectControlMethods.cpp
     adapters/presentation/EffectEntityFollowMethods.cpp
     adapters/presentation/EffectActionMethods.cpp
+    adapters/presentation/EffectParameterMethods.cpp
     adapters/presentation/EffectCompletionMethods.cpp
 
     # adapters/runtime
@@ -124,6 +125,7 @@ set(HKSR_API_SOURCES
     src/presentation/effects/EffectControl.cpp
     src/presentation/effects/EffectEntityFollow.cpp
     src/presentation/effects/EffectActions.cpp
+    src/presentation/effects/EffectAnimatorParameters.cpp
     src/presentation/effects/EffectCompletion.cpp
     src/presentation/effects/EffectInputs.cpp
     src/presentation/effects/EffectQueries.cpp
@@ -243,6 +245,7 @@ set(HKSR_API_TEST_SOURCES
     tests/presentation/effects/EffectControlTests.cpp
     tests/presentation/effects/EffectEntityFollowTests.cpp
     tests/presentation/effects/EffectActionsTests.cpp
+    tests/presentation/effects/EffectAnimatorParametersTests.cpp
     tests/presentation/effects/EffectCompletionTests.cpp
     tests/presentation/effects/EffectInputsTests.cpp
     tests/presentation/effects/EffectQueryTests.cpp

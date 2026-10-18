@@ -23,6 +23,12 @@ struct AttachValue {
     GameEntity* extra_target=nullptr;
 };
 static_assert(sizeof(AttachValue)==48 && offsetof(AttachValue,visibility)==32 && offsetof(AttachValue,extra_target)==40);
+struct VisibilityValue {
+    void* key=nullptr;
+    bool collider=false,trigger=false,audio=false;
+    unsigned char padding[5]{};
+};
+static_assert(sizeof(VisibilityValue)==16 && offsetof(VisibilityValue,collider)==8 && offsetof(VisibilityValue,audio)==10);
 }
 struct PartnerControlSession::State {
     EntityOwner owner;EntityToken partner,summoner;GameWorld* world;
@@ -143,5 +149,15 @@ PartnerControlResult PartnerControlSession::FollowVisibility(EntityToken target,
 bool PartnerControlSession::Close() {
     auto& s=*state_;if(s.busy)return false;s.closed=true;s.types={};
     const bool a=s.Release(s.temporary),b=s.Release(s.cached);return a && b;
+}
+PartnerControlResult PartnerControlSession::SetVisibility(const PartnerVisibility& request) {
+    auto& s=*state_;const auto input=request;
+    return s.Run({},[&](auto& out){
+        if(input.key.empty())throw std::invalid_argument("visibility requires a nonempty owner key");
+        VisibilityValue value;value.key=s.Text(input.key);
+        value.collider=input.mute_collider_when_hidden;value.trigger=input.mute_triggers_when_hidden;value.audio=input.mute_audio_when_hidden;
+        auto* component=s.Component(3,"RPG.GameCore","CharacterVisibleComponent");
+        s.Write(out,{},s.methods.visibility,component,input.visible,&value);
+    });
 }
 }

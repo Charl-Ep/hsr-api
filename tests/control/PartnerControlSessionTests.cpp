@@ -24,6 +24,8 @@ GameEntity* leader=nullptr;
 std::array<int,4> types{};
 std::map<int,void*> roots;
 int root_id=0,member_calls=0,attach_calls=0,cancel_calls=0,anim_calls=0,visible_calls=0;
+int visibility_sets=0;
+std::map<std::string,std::array<bool,3>> hide_requests;
 bool fault_attach=false,fault_cancel=false;
 std::function<void()> during_string,during_attach;
 std::string member_name;
@@ -76,6 +78,14 @@ void __fastcall Visibility(void* value,GameEntity* target,VisibilityFollow flag,
     Check(value==&child.components[3] && Kept(value) && metadata==&info);
     if(target)Check(Kept(target));++visible_calls;visibility_target=target;visibility_flag=flag;
 }
+void __fastcall SetVisibility(void* value,bool visible,const unsigned char* input,void* metadata) {
+    Check(value==&child.components[3] && Kept(value) && metadata==&info);
+    void* key=nullptr;std::memcpy(&key,input,sizeof(key));Check(key && Kept(key));
+    for(int i=11;i<16;++i)Check(input[i]==0);
+    const auto name=*static_cast<std::string*>(key);++visibility_sets;
+    if(visible)hide_requests.erase(name);
+    else hide_requests[name]={input[8]!=0,input[9]!=0,input[10]!=0};
+}
 struct Objects:ManagedObjects {
     std::vector<std::unique_ptr<std::string>> strings;
     ObjectResult NewStringUtf8(const char* text)override {
@@ -104,7 +114,8 @@ MetadataResolver Resolver() {
             {"CancelSmoothFollow","System.Void",{},false,M(Cancel)}}},
         {"","EAKGBLEMBLN",{{"GBJGAIBJLBB","System.Void",{"RPG.GameCore.GameEntity"},false,M(Anim)}}},
         {"RPG.GameCore","CharacterVisibleComponent",{{"SetFollowTargetVisibility","System.Void",
-            {"RPG.GameCore.GameEntity","RPG.GameCore.CharacterVisiblityFollowFlag"},false,M(Visibility)}}}
+            {"RPG.GameCore.GameEntity","RPG.GameCore.CharacterVisiblityFollowFlag"},false,M(Visibility)},
+            {"SetEntityVisibleParam","System.Void",{"System.Boolean","ANACIPLIMDE&"},false,M(SetVisibility)}}}
     });
 }
 }
@@ -121,11 +132,18 @@ int main() {
         {"","GDBHCNLLPAG","KPNGMCPOMHJ","System.Int32",44,6,true},
         {"","GDBHCNLLPAG","KPAAEDABMDD","RPG.GameCore.CharacterVisiblityFollowFlag",48,6,true},
         {"","GDBHCNLLPAG","FCKCHPNEEKB","RPG.GameCore.GameEntity",56,6,true}};
-    const auto methods=ResolvePartnerControl460(resolver,fields,attach_fields);
+    std::vector<DeclaredField> visibility_fields{
+        {"","ANACIPLIMDE","KDOLHICFKLL","System.String",16,6,true},
+        {"","ANACIPLIMDE","LPEFHLMHLPN","System.Boolean",24,6,true},
+        {"","ANACIPLIMDE","ONMFCPIJGNP","System.Boolean",25,6,true},
+        {"","ANACIPLIMDE","IEMGPGLKIIG","System.Boolean",26,6,true}};
+    const auto methods=ResolvePartnerControl460(resolver,fields,attach_fields,visibility_fields);
     auto wrong_layout=attach_fields;wrong_layout[6].offset=44;
-    bool rejected=false;try{ResolvePartnerControl460(resolver,fields,wrong_layout);}catch(const std::exception&){rejected=true;}Check(rejected);
+    bool rejected=false;try{ResolvePartnerControl460(resolver,fields,wrong_layout,visibility_fields);}catch(const std::exception&){rejected=true;}Check(rejected);
     wrong_layout=attach_fields;wrong_layout[0].flags|=0x10;
-    rejected=false;try{ResolvePartnerControl460(resolver,fields,wrong_layout);}catch(const std::exception&){rejected=true;}Check(rejected);
+    rejected=false;try{ResolvePartnerControl460(resolver,fields,wrong_layout,visibility_fields);}catch(const std::exception&){rejected=true;}Check(rejected);
+    auto wrong_visibility=visibility_fields;wrong_visibility[2].offset=27;
+    rejected=false;try{ResolvePartnerControl460(resolver,fields,attach_fields,wrong_visibility);}catch(const std::exception&){rejected=true;}Check(rejected);
     const ReferenceMethods refs{M(Retain),M(Target),M(Free),{}, {}};
     EntityAccessMethods access;access.runtime_id=M(Id);access.owner_world=M(Owner);access.loaded=M(Loaded);
     access.kill_immediately=M(Immediate);access.make_die=M(Kill);
@@ -146,6 +164,13 @@ int main() {
     Check(controls.FollowVisibility(p,VisibilityFollow::Invisible).returned && visibility_flag==VisibilityFollow::Invisible && visibility_target==p.entity);
     Check(controls.FollowVisibility(p,VisibilityFollow::None).returned && visibility_flag==VisibilityFollow::None && !visibility_target);
     Check(controls.FollowVisibility({},VisibilityFollow::Follow).returned && visibility_flag==VisibilityFollow::None);
+    Check(controls.SetVisibility({"action",false,true,false,true}).returned);
+    Check(hide_requests.at("action")[0] && !hide_requests.at("action")[1] && hide_requests.at("action")[2]);
+    Check(controls.SetVisibility({"phase",false,false,true,false}).returned && hide_requests.size()==2);
+    Check(controls.SetVisibility({"action",true}).returned && hide_requests.size()==1 && hide_requests.count("phase"));
+    Check(controls.SetVisibility({"phase",true}).returned && hide_requests.empty());
+    Check(!controls.SetVisibility({"",false}).returned && visibility_sets==4);
+    Check(!controls.SetVisibility({std::string("a\0b",3),false}).returned && visibility_sets==4);
     Check(!controls.FollowAnimation(foreign).returned && !controls.FollowAnimation(q).returned);
     parent.world=other_world;Check(!controls.SetMemberName("wrong-world").returned);parent.world=world;
     leader=foreign.entity;Check(!controls.FollowAnimation(p).returned);leader=p.entity;
@@ -160,6 +185,7 @@ int main() {
     during_string=[&]{TrackedEntities().Disposed(q);};
     Check(!controls.SetMemberName("ended").returned && member_calls==writes);during_string={};
     Check(!controls.FollowAnimation(p).returned);
+    Check(!controls.SetVisibility({"ended",false}).returned && visibility_sets==4);
     Check(controls.Close() && controls.Close() && roots.size()==creation_roots);
     Check(!controls.SetMemberName("closed").returned);
     a.Remove();b.Remove();c.Remove();a.Service(frame);b.Service(frame);c.Service(frame);

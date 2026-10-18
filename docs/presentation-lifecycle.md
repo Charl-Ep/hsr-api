@@ -72,6 +72,8 @@ This entry does not execute a summon task or configure member names, attachment,
 
 `PartnerControls` uses the created actor's official components. `SetMemberName` assigns its group name. `Attach` aligns two named model attach points and disables smooth following. `FollowAnimation` selects a synchronization target; an empty token clears it. `FollowVisibility` forwards the visibility relation; `None` or an empty target clears the relation. These operations do not advance animation or recalculate attachment transforms.
 
+`SetVisibility` adds or removes a keyed hide request through `CharacterVisibleComponent`. Its options control collider, trigger and audio muting while hidden. Setting `visible=true` removes that key; other active hide requests still apply. Use distinct keys for independent visual owners. Closing the control session releases references, not visibility requests; remove the key or retire the actor explicitly.
+
 Commands require current entities from the same client and world, with the partner belonging to the specified summoner. Results preserve individual native-call outcomes, including partial failures. `Close` releases adapter references; it does not destroy the actor or reverse its relations. Retire the actor through its creation session. The factory initializes its configured animation events; the NPC event supplement is not a Partner baseline reader.
 
 Creation receipts cover both `CreateEmptyEntity` and `_CreateNewEntityImpl`, including synchronous explicit-ID auxiliary entities. Nested returns of the same live object produce one birth. These scopes do not attribute unrelated asynchronous creations.
@@ -147,6 +149,8 @@ Create an effect observer during preparation, then call its `ActivateOnCurrentTh
 The `SetAnimatorState(reference, std::string, duration, restart)` overload resolves the state with Unity's `Animator.StringToHash`, caches the result, and rechecks the request after managed input preparation. State-name resolution stays within the SDK.
 
 `SetAnimatorTrigger(reference, name, reset)` sets or resets a nonempty trigger on all child Animators, including inactive children. A pending effect returns `NotLoaded`.
+
+`SetAnimatorParameter(reference, parameter)` accepts a name and a typed `float`, `int`, `bool` or `EffectParameterTrigger`. `FirstActive` sets the first Animator on the effect or its active children without checking its parameter declarations. `FirstMatchingParameter` sets only the first active Animator with a matching parameter name and type. `NoMatch` means no setter ran; it is not a pending load. Values are resolved inputs, not battle expressions. Both modes retain the exact request identity and do not force resource loading.
 
 `OwnedEffectRequest::Cancel(EffectRemovalOptions)` accepts `fade`, `immediate_fade` and `unbind`. `Service` forwards them to the official effect manager with the retained request ID. Keep servicing until `closed`; accepted removal is not completed destruction. ID zero is rejected by both removal paths because the engine treats it as an unrestricted filter.
 

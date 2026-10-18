@@ -4,7 +4,7 @@
 #include <functional>
 
 namespace hksr::sdk_v1 {
-enum class EffectControlState { Applied, NotLoaded, Ended, Unsupported, Failed };
+enum class EffectControlState { Applied, NotLoaded, Ended, Unsupported, Failed, NoMatch };
 struct EffectControlResult {
     EffectControlState state=EffectControlState::Failed;
     CallResult call;

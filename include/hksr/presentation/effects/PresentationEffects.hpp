@@ -36,6 +36,7 @@ public:
     EffectControlResult SetAnimatorState(EffectReference,const std::string& state,
         float normalized_transition_duration=0,bool restart=true) const;
     EffectControlResult SetAnimatorTrigger(EffectReference,const std::string& name,bool reset=false) const;
+    EffectControlResult SetAnimatorParameter(EffectReference,const EffectAnimatorParameter&) const;
 private:
     struct State;
     State* state_;

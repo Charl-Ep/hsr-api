@@ -1,5 +1,6 @@
 #pragma once
 #include "EffectControl.hpp"
+#include "EffectAnimatorParameters.hpp"
 #include "../../managed/ManagedArrays.hpp"
 
 namespace hksr::sdk_v1 {
@@ -17,6 +18,7 @@ struct EffectActionMethods {
 struct EffectActionServices {
     std::function<EffectControlResult(EffectReference,const std::string&,bool)> trigger;
     std::function<EffectRemovalResult(void*,EffectReference,const EffectRemovalOptions&)> remove;
+    std::function<EffectControlResult(EffectReference,const EffectAnimatorParameter&)> parameter;
 };
 // Engine-thread operations on an exact effect receipt. Child enumeration
 // includes inactive Animators. Removal delegates pending/active/streaming

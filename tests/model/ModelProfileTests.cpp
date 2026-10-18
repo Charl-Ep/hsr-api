@@ -102,6 +102,7 @@ void TestEffectAccess();
 void TestEffectControl();
 void TestEffectEntityFollow();
 void TestEffectActions();
+void TestEffectAnimatorParameters();
 void TestEffectRelations();
 void TestEffectTriggerSource();
 void TestEffectQueries();
@@ -135,6 +136,7 @@ void RunTests(int argc, char** argv){
     TestEffectControl();
     TestEffectEntityFollow();
     TestEffectActions();
+    TestEffectAnimatorParameters();
     TestEffectRelations();
     TestEffectTriggerSource();
     TestEffectQueries();

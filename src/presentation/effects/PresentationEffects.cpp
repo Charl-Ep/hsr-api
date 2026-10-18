@@ -36,6 +36,10 @@ EffectControlResult PresentationEffects::SetAnimatorTrigger(EffectReference ref,
     return state_->actions.trigger?state_->actions.trigger(ref,name,reset):
         EffectControlResult{EffectControlState::Unsupported,{},true,"effect Animator trigger unavailable"};
 }
+EffectControlResult PresentationEffects::SetAnimatorParameter(EffectReference ref,const EffectAnimatorParameter& value) const {
+    return state_->actions.parameter?state_->actions.parameter(ref,value):
+        EffectControlResult{EffectControlState::Unsupported,{},true,"effect Animator parameter unavailable"};
+}
 EffectControlResult PresentationEffects::SetAnimatorState(EffectReference ref,const std::string& name,float duration,bool restart) const {
     return state_->control.named_animator?state_->control.named_animator(ref,name,duration,restart):
         EffectControlResult{EffectControlState::Unsupported,{},true,"named effect Animator control unavailable"};

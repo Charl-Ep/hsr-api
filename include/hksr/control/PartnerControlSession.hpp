@@ -14,6 +14,11 @@ struct PartnerAttachment {
     bool disable_when_invisible=false, use_target_scale=false;
     VisibilityFollow visibility=VisibilityFollow::None;
 };
+struct PartnerVisibility {
+    std::string key;
+    bool visible=true;
+    bool mute_collider_when_hidden=false, mute_triggers_when_hidden=false, mute_audio_when_hidden=false;
+};
 struct PartnerControlResult {
     // Returned records native completion, not a visual acceptance result.
     bool returned=false, references_released=true;
@@ -24,6 +29,7 @@ struct PartnerControlMethods {
     Method component, owner_world, member_name, group_leader;
     Method attach, cancel_smooth_follow, animation_follow, visibility_follow;
     std::size_t component_owner=0;
+    Method visibility;
 };
 // Immediate commands on an owned Partner. The engine's existing components
 // schedule attachment, animation synchronization and visibility propagation.
@@ -45,11 +51,15 @@ public:
     PartnerControlResult Attach(const PartnerAttachment&);
     PartnerControlResult FollowAnimation(EntityToken target={}); // empty clears
     PartnerControlResult FollowVisibility(EntityToken target, VisibilityFollow);
+    // A nonempty per-entity key owns one hide request. visible=true removes
+    // only that key; other hide requests still apply. Close does not show it.
+    PartnerControlResult SetVisibility(const PartnerVisibility&);
     bool Close();
 private:
     struct State; State* state_;
 };
 HKSR_API PartnerControlMethods ResolvePartnerControl460(MethodResolver&,
     const std::vector<DeclaredField>& component_fields,
-    const std::vector<DeclaredField>& attachment_fields);
+    const std::vector<DeclaredField>& attachment_fields,
+    const std::vector<DeclaredField>& visibility_fields);
 }

@@ -54,6 +54,7 @@ struct PresentationContext::State {
     std::unique_ptr<EffectInputs> effect_inputs;
     std::unique_ptr<EffectControl> effect_control;
     std::unique_ptr<EffectActions> effect_actions;
+    std::unique_ptr<EffectAnimatorParameters> effect_parameters;
     std::unique_ptr<EffectTriggerSource> effect_sources;
     bool effect_control_closed=false;
     std::optional<EffectAccess> effect_access;
@@ -106,6 +107,16 @@ struct PresentationContext::State {
                 resources.Arrays(),metadata->ReadFields("RPG.Client","MonoEffect"));
         }
         return *effect_actions;
+    }
+    EffectAnimatorParameters& EffectParameters() {
+        if(effect_control_closed)throw std::logic_error("presentation effect parameters closed");
+        if(!effect_parameters) {
+            const auto methods=ResolveEffectAnimatorParameters460(*metadata);
+            for(const auto& error:methods.binding_errors)Log("effect parameter binding: "+error);
+            effect_parameters=std::make_unique<EffectAnimatorParameters>(*effect_access,methods,bindings.references,objects,
+                resources.Arrays(),metadata->ReadFields("RPG.Client","MonoEffect"));
+        }
+        return *effect_parameters;
     }
     std::unique_ptr<EventRegistrationLease> ExitEvents(EntityToken entity,const std::string& state,
         const std::vector<EffectRemovalSource>& sources) {
@@ -272,7 +283,7 @@ std::unique_ptr<PartnerControlSession> PresentationContext::PartnerControls(Enti
     auto& s=*storage_->state;
     if(!s.metadata)throw std::logic_error("partner controls require a prepared runtime context");
     auto methods=ResolvePartnerControl460(*s.metadata,s.metadata->ReadFields("RPG.GameCore","GameComponentBase",false),
-        s.metadata->ReadFields("","GDBHCNLLPAG",false));
+        s.metadata->ReadFields("","GDBHCNLLPAG",false),s.metadata->ReadFields("","ANACIPLIMDE",false));
     return std::make_unique<PartnerControlSession>(s.owner,partner,summoner,world,methods,s.bindings.references,s.objects);
 }
 PresentationContext::NpcInputFactory PresentationContext::NpcInputs() const {
@@ -374,6 +385,7 @@ std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices()
     EffectActionServices actions;
     actions.trigger=[s](EffectReference ref,const std::string& name,bool reset){return s->EffectOperations().Trigger(ref,name,reset);};
     actions.remove=[s](void* manager,EffectReference ref,const EffectRemovalOptions& options){return s->EffectOperations().Remove(manager,ref,options);};
+    actions.parameter=[s](EffectReference ref,const EffectAnimatorParameter& value){return s->EffectParameters().Set(ref,value);};
     return std::make_shared<PresentationEffects>(std::move(*services),std::move(control),
         [s](void* parameters,void* caster,void* target,void* callback,const EntityEffectOptions& options) {
             return s->effect_inputs->ConfigureEntity(parameters,caster,target,callback,options);
@@ -477,6 +489,7 @@ bool PresentationContext::Close() {
     s.effect_control_closed=true;
     if(s.effect_control && !s.effect_control->Close())closed=false;
     if(s.effect_actions && !s.effect_actions->Close())closed=false;
+    if(s.effect_parameters && !s.effect_parameters->Close())closed=false;
     for(auto it=s.exit_inputs.begin();it!=s.exit_inputs.end();) {
         if((*it)->Close())it=s.exit_inputs.erase(it);else {closed=false;++it;}
     }
