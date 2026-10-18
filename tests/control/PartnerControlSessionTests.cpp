@@ -14,7 +14,7 @@ namespace {
 using namespace hksr::api;
 void Check(bool value){if(!value)throw std::runtime_error("partner control test failed");}
 struct Component {void* header[2]{};GameEntity* owner=nullptr;};
-struct Actor {GameWorld* world=nullptr;std::array<Component,5> components;};
+struct Actor {GameWorld* world=nullptr;std::array<Component,5> components;bool animation=true;};
 int world_data,other_world_data,manager_data,definition_data,row_data,info;
 auto* world=reinterpret_cast<GameWorld*>(&world_data);
 auto* other_world=reinterpret_cast<GameWorld*>(&other_world_data);
@@ -48,7 +48,11 @@ void __fastcall Immediate(GameEntity*,bool,void*){}
 void __fastcall Kill(GameWorld*,GameEntity* e,GameEntity*,void*){TrackedEntities().Disposed(TrackedEntities().Current(e));}
 void* __fastcall GetComponent(GameEntity* value,void* type,void*) {
     Check(Kept(value) && Kept(type));
-    for(std::size_t i=0;i<types.size();++i)if(type==&types[i])return &reinterpret_cast<Actor*>(value)->components[i];
+    for(std::size_t i=0;i<types.size();++i)if(type==&types[i]) {
+        auto* actor=reinterpret_cast<Actor*>(value);
+        if(i==4 && !actor->animation)return nullptr;
+        return &actor->components[i];
+    }
     throw std::runtime_error("unexpected partner component type");
 }
 GameEntity* __fastcall GetLeader(void* value,void*){Check(value==&child.components[0] && Kept(value));return leader;}
@@ -172,7 +176,19 @@ int main() {
     PartnerAttachment attach{p,"EffectScale","PartnerPos01",true,false,VisibilityFollow::Invisible};
     auto result=controls.Attach(attach);Check(result.returned && result.calls.size()==2 && result.references_released && attach_calls==1 && cancel_calls==1);
     Check(controls.FollowAnimation(p).returned && anim_target==p.entity);
+    parent.animation=false;const auto before_follow=anim_calls;
+    const auto follow_roots=roots.size();
+    result=controls.FollowAnimation(p);
+    Check(!result.returned && result.calls.empty() && result.references_released &&
+        result.error.find("CFFPEAALCPH component unavailable")!=std::string::npos &&
+        anim_calls==before_follow && anim_target==p.entity && roots.size()==follow_roots);
+    // Removal must remain possible even when the old source lost its component.
     Check(controls.FollowAnimation().returned && !anim_target);
+    parent.animation=true;parent.components[4].owner=q.entity;
+    const auto after_clear=anim_calls;
+    result=controls.FollowAnimation(p);
+    Check(!result.returned && result.calls.empty() && result.references_released && anim_calls==after_clear);
+    parent.components[4].owner=p.entity;
     Check(controls.FollowVisibility(p,VisibilityFollow::Invisible).returned && visibility_flag==VisibilityFollow::Invisible && visibility_target==p.entity);
     Check(controls.FollowVisibility(p,VisibilityFollow::None).returned && visibility_flag==VisibilityFollow::None && !visibility_target);
     Check(controls.FollowVisibility({},VisibilityFollow::Follow).returned && visibility_flag==VisibilityFollow::None);

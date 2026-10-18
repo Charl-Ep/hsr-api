@@ -65,19 +65,20 @@ struct PartnerControlSession::State {
         CheckWorld(partner);CheckWorld(summoner);if(target.entity)CheckWorld(target);
         Current(partner);Current(summoner);if(target.entity)Current(target);
     }
-    void* Component(std::size_t index,const char* ns,const char* name) {
+    void* Component(std::size_t index,const char* ns,const char* name,EntityToken entity={}) {
+        if(!entity.entity)entity=partner;
         if(!types[index]) {
             const auto result=objects.ManagedType(ns,name);
             if(!result.call.returned || !result.object)throw std::runtime_error(std::string(name)+" Type unavailable");
             Keep(result.object,cached);types[index]=result.object;
         }
-        Current(partner);void* result=nullptr;
-        if(!native::Call(methods.component,&result,partner.entity,types[index]).returned || !result)
+        Current(entity);void* result=nullptr;
+        if(!native::Call(methods.component,&result,entity.entity,types[index]).returned || !result)
             throw std::runtime_error(std::string(name)+" component unavailable");
-        Keep(result,temporary);Current(partner);
+        Keep(result,temporary);Current(entity);
         GameEntity* component_owner=nullptr;
-        if(!native::CopyMemoryChecked(&component_owner,static_cast<unsigned char*>(result)+methods.component_owner,sizeof(component_owner)) || component_owner!=partner.entity)
-            throw std::runtime_error("partner component owner differs");
+        if(!native::CopyMemoryChecked(&component_owner,static_cast<unsigned char*>(result)+methods.component_owner,sizeof(component_owner)) || component_owner!=entity.entity)
+            throw std::runtime_error("partner relation component owner differs");
         return result;
     }
     void* Text(const std::string& value) {
@@ -134,6 +135,10 @@ PartnerControlResult PartnerControlSession::FollowAnimation(EntityToken target) 
     auto& s=*state_;
     return s.Run(target,[&](auto& out){
         if(target.entity==s.partner.entity)throw std::invalid_argument("animation follow target cannot be self");
+        // EAKGBLEMBLN.Tick reads the target's CFF state manager after binding.
+        // A model Animator alone cannot satisfy this native dependency. Check
+        // before the setter changes the target and registers its event callback.
+        if(target.entity)s.Component(4,"","CFFPEAALCPH",target);
         auto* component=s.Component(2,"","EAKGBLEMBLN");s.Write(out,target,s.methods.animation_follow,component,target.entity);
     });
 }

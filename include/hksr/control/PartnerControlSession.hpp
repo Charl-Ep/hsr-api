@@ -53,7 +53,9 @@ public:
     // Uses official AttachTo's self/target attach-point contract, then disables
     // smooth following. Attachment strings must name actual model attach points.
     PartnerControlResult Attach(const PartnerAttachment&);
-    PartnerControlResult FollowAnimation(EntityToken target={}); // empty clears
+    // A nonempty target needs its official CFF animation component; a model
+    // Animator alone is insufficient. Empty clears the current relation.
+    PartnerControlResult FollowAnimation(EntityToken target={});
     PartnerControlResult FollowVisibility(EntityToken target, VisibilityFollow);
     // A nonempty per-entity key owns one hide request. visible=true removes
     // only that key; other hide requests still apply. Close does not show it.
