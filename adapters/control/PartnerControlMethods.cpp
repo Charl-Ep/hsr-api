@@ -43,6 +43,9 @@ PartnerControlMethods ResolvePartnerControl460(MethodResolver& m,
     out.visibility_follow=m.Resolve("RPG.GameCore","CharacterVisibleComponent","SetFollowTargetVisibility","System.Void",
         {"RPG.GameCore.GameEntity","RPG.GameCore.CharacterVisiblityFollowFlag"});
     out.visibility=m.Resolve("RPG.GameCore","CharacterVisibleComponent","SetEntityVisibleParam","System.Void",{"System.Boolean","ANACIPLIMDE&"});
+    out.idle_animation=m.Resolve("","CFFPEAALCPH","ENBOEHDHCAL","System.Void",
+        {"RPG.GameCore.AnimStateLogicType","System.String","System.Single","System.Single","System.Single",
+         "RPG.GameCore.AnimStateLogicTypeExtra","System.UInt32","System.Boolean"});
     return out;
 }
 }

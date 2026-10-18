@@ -5,6 +5,7 @@
 #include <hksr/native/MetadataReader.hpp>
 #include <array>
 #include <cstddef>
+#include <cmath>
 #include <functional>
 #include <stdexcept>
 
@@ -33,7 +34,7 @@ static_assert(sizeof(VisibilityValue)==16 && offsetof(VisibilityValue,collider)=
 struct PartnerControlSession::State {
     EntityOwner owner;EntityToken partner,summoner;GameWorld* world;
     PartnerControlMethods methods;ManagedObjects& objects;ManagedRoots roots;
-    std::array<void*,4> types{};
+    std::array<void*,5> types{};
     std::vector<ManagedRootId> cached,temporary;
     bool closed=false,busy=false;
     State(const EntityOwner& o,EntityToken p,EntityToken s,GameWorld* w,PartnerControlMethods m,ReferenceMethods r,ManagedObjects& obj)
@@ -158,6 +159,23 @@ PartnerControlResult PartnerControlSession::SetVisibility(const PartnerVisibilit
         value.collider=input.mute_collider_when_hidden;value.trigger=input.mute_triggers_when_hidden;value.audio=input.mute_audio_when_hidden;
         auto* component=s.Component(3,"RPG.GameCore","CharacterVisibleComponent");
         s.Write(out,{},s.methods.visibility,component,input.visible,&value);
+    });
+}
+PartnerControlResult PartnerControlSession::PlayIdle(const PartnerIdleAnimation& request) {
+    auto& s=*state_;const auto input=request;
+    return s.Run({},[&](auto& out){
+        if(input.state.empty() || !std::isfinite(input.normalized_start) ||
+            !std::isfinite(input.normalized_transition) || input.normalized_transition<0 ||
+            !std::isfinite(input.normalized_end))throw std::invalid_argument("invalid partner idle animation input");
+        auto* name=s.Text(input.state);
+        auto* component=s.Component(4,"","CFFPEAALCPH");
+        // TriggerAnimState's ordinary path passes start, transition and end
+        // in this order. Idle(1) avoids the OnHit/Die gameplay state paths.
+        // Extra, sequence request ID and the final request flag stay at the
+        // factory's defaults; this API does not own an official task sequence.
+        s.Write(out,{},s.methods.idle_animation,component,std::int32_t{1},name,
+            input.normalized_start,input.normalized_transition,input.normalized_end,
+            std::int32_t{0},std::uint32_t{0},false);
     });
 }
 }

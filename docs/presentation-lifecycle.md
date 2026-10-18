@@ -72,6 +72,8 @@ This entry does not execute a summon task or configure member names, attachment,
 
 `PartnerControls` uses the created actor's official components. `SetMemberName` assigns its group name. `Attach` aligns two named model attach points and disables smooth following. `FollowAnimation` selects a synchronization target; an empty token clears it. `FollowVisibility` forwards the visibility relation; `None` or an empty target clears the relation. These operations do not advance animation or recalculate attachment transforms.
 
+`PlayIdle` sends a named animation to the partner's initialized official Idle logic state, with normalized start, transition and end inputs. It preserves the native entity-scoped animation notification. The result reports submission, not animation completion; it does not install a controller or execute gameplay tasks.
+
 `SetVisibility` adds or removes a keyed hide request through `CharacterVisibleComponent`. Its options control collider, trigger and audio muting while hidden. Setting `visible=true` removes that key; other active hide requests still apply. Use distinct keys for independent visual owners. Closing the control session releases references, not visibility requests; remove the key or retire the actor explicitly.
 
 Commands require current entities from the same client and world, with the partner belonging to the specified summoner. Results preserve individual native-call outcomes, including partial failures. `Close` releases adapter references; it does not destroy the actor or reverse its relations. Retire the actor through its creation session. The factory initializes its configured animation events; the NPC event supplement is not a Partner baseline reader.
@@ -133,6 +135,8 @@ When a carrier has no adventure MonoAvatar, the session can use an existing Look
 `StartEntity(caster, target, path, options)` keeps the creator and recipient distinct. It maps the path through the caster, retains both entities, and uses the official parameter pool and asynchronous manager. Options specify the engine name, position/rotation offsets, optional scale, attachment, fade-in and immediate simulation. Inputs are copied before engine calls; cancellation uses the same request lifecycle as `Start`.
 
 `attach_point` selects an initial named attachment such as `Muzzle`. It is independent of `attach_to_target`, which controls continued parenting. The loader resolves the attachment before initializing the effect; an empty name leaves the prefab's default attachment policy in place.
+
+Entity and spatial options accept `resident` to set `MonoEffectFlag.Resident`. The request owner remains responsible for removal. The SDK supplies an immutable managed flag array through the official field setter.
 
 This entry accepts resolved entity-relative inputs. It does not evaluate target aliases or task expressions, consult global mutex rules, hide entities during loading, attach Timelines or run post-load subobject tasks. Programs own reuse and logical effect names. Engine `unique_name` is optional and is not an ownership boundary.
 

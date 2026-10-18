@@ -19,6 +19,10 @@ struct PartnerVisibility {
     bool visible=true;
     bool mute_collider_when_hidden=false, mute_triggers_when_hidden=false, mute_audio_when_hidden=false;
 };
+struct PartnerIdleAnimation {
+    std::string state;
+    float normalized_start=0, normalized_transition=0, normalized_end=1;
+};
 struct PartnerControlResult {
     // Returned records native completion, not a visual acceptance result.
     bool returned=false, references_released=true;
@@ -29,7 +33,7 @@ struct PartnerControlMethods {
     Method component, owner_world, member_name, group_leader;
     Method attach, cancel_smooth_follow, animation_follow, visibility_follow;
     std::size_t component_owner=0;
-    Method visibility;
+    Method visibility, idle_animation;
 };
 // Immediate commands on an owned Partner. The engine's existing components
 // schedule attachment, animation synchronization and visibility propagation.
@@ -54,6 +58,10 @@ public:
     // A nonempty per-entity key owns one hide request. visible=true removes
     // only that key; other hide requests still apply. Close does not show it.
     PartnerControlResult SetVisibility(const PartnerVisibility&);
+    // Requests an explicit state through the Partner's initialized official
+    // Idle logic state. Does not install a controller or run a gameplay task.
+    // Returning records request submission, not completion of the animation.
+    PartnerControlResult PlayIdle(const PartnerIdleAnimation&);
     bool Close();
 private:
     struct State; State* state_;

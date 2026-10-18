@@ -16,6 +16,7 @@ struct EntityEffectOptions {
     std::optional<Position3> scale;
     bool attach_to_target=false,fade_in=true,simulate_immediately=false;
     std::string attach_point; // initial named attachment, independent of continued parenting
+    bool resident=false; // official MonoEffectFlag.Resident; caller owns removal
 };
 // Fixed world pose with no target entity or attachment. Caster remains the
 // resource mapping and ownership source; the effect may animate from this pose.
@@ -25,6 +26,7 @@ struct SpatialEffectOptions {
     std::string unique_name;
     std::optional<Position3> scale;
     bool fade_in=true,simulate_immediately=false;
+    bool resident=false;
 };
 using ConfigureEntityEffect=std::function<EffectInputResult(void*,void*,void*,void*,const EntityEffectOptions&)>;
 using ConfigureSpatialEffect=std::function<EffectInputResult(void*,void*,void*,const SpatialEffectOptions&)>;

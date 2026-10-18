@@ -1,6 +1,7 @@
 #include <hksr/presentation/effects/EffectInputs.hpp>
 #include <hksr/native/Invocation.hpp>
 #include <hksr/native/MetadataReader.hpp>
+#include <hksr/managed/ManagedArrays.hpp>
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -14,6 +15,7 @@ struct EffectInputs::State {
     std::map<std::string,Field> fields;
     std::map<std::string,DeclaredField> entity_fields;
     Method attach;
+    void* resident_flags=nullptr;
     bool spatial_prepared=false;
     bool closed=false;
     State(MethodResolver& m,ObjectMetadata& d,ManagedObjects& o,ReferenceMethods r):methods(m),metadata(d),objects(o),roots(r){}
@@ -95,6 +97,23 @@ struct EffectInputs::State {
         if(!id)return;
         if(roots.Release(id).complete){roots.Forget(id);retained.erase(std::remove(retained.begin(),retained.end(),id),retained.end());}
     }
+    void* ResidentFlags() {
+        if(resident_flags)return resident_flags;
+        auto* type=Keep(objects.ManagedType("RPG.GameCore","MonoEffectFlag"));
+        const auto type_root=retained.back();
+        ManagedRootId value_root=0,array_root=0;
+        try {
+            const auto box=methods.Resolve("System","Enum","ToObject","System.Object",{"System.Type","System.Int32"},MethodKind::Static);
+            ObjectResult boxed;boxed.call=native::Call(box,&boxed.object,type,std::int32_t{1});
+            auto* value=Keep(boxed);value_root=retained.back();
+            ManagedArrays arrays(ResolveArrayMethods(methods));
+            auto* array=Keep(arrays.Create(type,1));array_root=retained.back();
+            if(!arrays.Set(array,value,0).returned)throw std::runtime_error("effect resident array initialization failed");
+            // Config tasks also share immutable Flags arrays with requests.
+            resident_flags=array;
+        }catch(...){ReleaseValue(array_root);ReleaseValue(value_root);ReleaseValue(type_root);throw;}
+        ReleaseValue(value_root);ReleaseValue(type_root);return resident_flags;
+    }
 };
 EffectInputs::EffectInputs(MethodResolver& m,ObjectMetadata& d,ManagedObjects& o,ReferenceMethods r):state_(new State(m,d,o,r)){}
 EffectInputs::~EffectInputs(){delete state_;}
@@ -129,6 +148,7 @@ EffectInputResult EffectInputs::ConfigureSpatial(void* parameters,void* caster,v
     spatial.rotation={float(r.x/length),float(r.y/length),float(r.z/length),float(r.w/length)};
     EntityEffectOptions options;options.unique_name=spatial.unique_name;options.scale=spatial.scale;
     options.fade_in=spatial.fade_in;options.simulate_immediately=spatial.simulate_immediately;
+    options.resident=spatial.resident;
     return ConfigureImpl(parameters,caster,nullptr,completion,options,&spatial);
 }
 EffectInputResult EffectInputs::ConfigureImpl(void* parameters,void* caster,void* target,void* completion,
@@ -145,6 +165,8 @@ EffectInputResult EffectInputs::ConfigureImpl(void* parameters,void* caster,void
     const auto name_field=s.Get("TriggerEffectParams","UniqueEffectName",false);
     const auto callback_field=s.Get("TriggerEffectParams","CompleteCallback",false);
     const auto attach_field=s.Get("TriggerEffectParams","DynamicAttach",false);
+    const auto flags_field=s.Get("TriggerEffectParams","Flags",false);
+    auto* flags=options.resident?s.ResidentFlags():nullptr;
     ManagedRootId text_root=0,attach_root=0;
     try {
         auto* name=s.Keep(s.objects.NewStringUtf8(options.unique_name.c_str()));text_root=s.retained.back();
@@ -159,6 +181,7 @@ EffectInputResult EffectInputs::ConfigureImpl(void* parameters,void* caster,void
         // The loader derives AttachTransform/AttachPointName before Reset;
         // writing those cached outputs would be overwritten on load.
         if(out.target.returned)out.target=s.Set(attach_field,parameters,attach_point);
+        if(out.target.returned)out.target=s.Set(flags_field,parameters,flags);
         if(out.target.returned) {
             // Qualified HSR nullable Vector3 storage: value at +0, presence at
             // +12. Source vectors and parameter offsets are distinct contracts.

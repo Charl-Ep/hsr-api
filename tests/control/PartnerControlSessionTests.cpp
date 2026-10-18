@@ -6,6 +6,7 @@
 #include <cstring>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <stdexcept>
 
@@ -13,7 +14,7 @@ namespace {
 using namespace hksr::api;
 void Check(bool value){if(!value)throw std::runtime_error("partner control test failed");}
 struct Component {void* header[2]{};GameEntity* owner=nullptr;};
-struct Actor {GameWorld* world=nullptr;std::array<Component,4> components;};
+struct Actor {GameWorld* world=nullptr;std::array<Component,5> components;};
 int world_data,other_world_data,manager_data,definition_data,row_data,info;
 auto* world=reinterpret_cast<GameWorld*>(&world_data);
 auto* other_world=reinterpret_cast<GameWorld*>(&other_world_data);
@@ -21,10 +22,12 @@ Actor parent,child,other;
 GameEntity* E(Actor& value){return reinterpret_cast<GameEntity*>(&value);}
 Actor* next_actor=nullptr;
 GameEntity* leader=nullptr;
-std::array<int,4> types{};
+std::array<int,5> types{};
 std::map<int,void*> roots;
 int root_id=0,member_calls=0,attach_calls=0,cancel_calls=0,anim_calls=0,visible_calls=0;
 int visibility_sets=0;
+int idle_calls=0;bool fault_idle=false;
+PartnerIdleAnimation expected_idle;
 std::map<std::string,std::array<bool,3>> hide_requests;
 bool fault_attach=false,fault_cancel=false;
 std::function<void()> during_string,during_attach;
@@ -74,6 +77,13 @@ void __fastcall Anim(void* value,GameEntity* target,void* metadata) {
     Check(value==&child.components[2] && Kept(value) && metadata==&info);
     if(target)Check(Kept(target));++anim_calls;anim_target=target;
 }
+void __fastcall Idle(void* value,int logic,void* name,float start,float transition,float end,int extra,unsigned request,bool flag,void* metadata) {
+    Check(value==&child.components[4] && Kept(value) && Kept(name) && metadata==&info);
+    Check(logic==1 && !extra && !request && !flag);
+    Check(*static_cast<std::string*>(name)==expected_idle.state && start==expected_idle.normalized_start &&
+        transition==expected_idle.normalized_transition && end==expected_idle.normalized_end);
+    ++idle_calls;if(fault_idle)RaiseException(0xE0790003,0,0,nullptr);
+}
 void __fastcall Visibility(void* value,GameEntity* target,VisibilityFollow flag,void* metadata) {
     Check(value==&child.components[3] && Kept(value) && metadata==&info);
     if(target)Check(Kept(target));++visible_calls;visibility_target=target;visibility_flag=flag;
@@ -94,9 +104,9 @@ struct Objects:ManagedObjects {
     }
     ObjectResult AllocateObject(const char*,const char*)override {throw std::runtime_error("no component or task allocation expected");}
     ObjectResult ManagedType(const char* ns,const char* name)override {
-        const std::array<std::string,4> names{"OLABFALNLJM","TransformComponent","EAKGBLEMBLN","CharacterVisibleComponent"};
+        const std::array<std::string,5> names{"OLABFALNLJM","TransformComponent","EAKGBLEMBLN","CharacterVisibleComponent","CFFPEAALCPH"};
         for(std::size_t i=0;i<names.size();++i)if(name==names[i]) {
-            Check(std::string(ns)==(i==0 || i==2?"":"RPG.GameCore"));return {{true,0},&types[i]};
+            Check(std::string(ns)==(i==0 || i==2 || i==4?"":"RPG.GameCore"));return {{true,0},&types[i]};
         }
         throw std::runtime_error("unexpected managed type");
     }
@@ -113,6 +123,8 @@ MetadataResolver Resolver() {
             {"AttachTo","System.Void",{"GDBHCNLLPAG"},false,M(Attach)},
             {"CancelSmoothFollow","System.Void",{},false,M(Cancel)}}},
         {"","EAKGBLEMBLN",{{"GBJGAIBJLBB","System.Void",{"RPG.GameCore.GameEntity"},false,M(Anim)}}},
+        {"","CFFPEAALCPH",{{"ENBOEHDHCAL","System.Void",{"RPG.GameCore.AnimStateLogicType","System.String",
+            "System.Single","System.Single","System.Single","RPG.GameCore.AnimStateLogicTypeExtra","System.UInt32","System.Boolean"},false,M(Idle)}}},
         {"RPG.GameCore","CharacterVisibleComponent",{{"SetFollowTargetVisibility","System.Void",
             {"RPG.GameCore.GameEntity","RPG.GameCore.CharacterVisiblityFollowFlag"},false,M(Visibility)},
             {"SetEntityVisibleParam","System.Void",{"System.Boolean","ANACIPLIMDE&"},false,M(SetVisibility)}}}
@@ -171,6 +183,14 @@ int main() {
     Check(controls.SetVisibility({"phase",true}).returned && hide_requests.empty());
     Check(!controls.SetVisibility({"",false}).returned && visibility_sets==4);
     Check(!controls.SetVisibility({std::string("a\0b",3),false}).returned && visibility_sets==4);
+    expected_idle={"Skill11_Loop",0.25f,0.125f,1.5f};
+    result=controls.PlayIdle(expected_idle);Check(result.returned && result.references_released && result.calls.size()==1 && idle_calls==1);
+    Check(!controls.PlayIdle({""}).returned && !controls.PlayIdle({std::string("a\0b",3)}).returned);
+    Check(!controls.PlayIdle({"state",0,-0.1f,1}).returned);
+    Check(!controls.PlayIdle({"state",std::numeric_limits<float>::quiet_NaN()}).returned && idle_calls==1);
+    child.components[4].owner=p.entity;Check(!controls.PlayIdle(expected_idle).returned && idle_calls==1);child.components[4].owner=q.entity;
+    fault_idle=true;result=controls.PlayIdle(expected_idle);fault_idle=false;
+    Check(!result.returned && result.calls.size()==1 && result.calls[0].exception==0xE0790003 && idle_calls==2);
     Check(!controls.FollowAnimation(foreign).returned && !controls.FollowAnimation(q).returned);
     parent.world=other_world;Check(!controls.SetMemberName("wrong-world").returned);parent.world=world;
     leader=foreign.entity;Check(!controls.FollowAnimation(p).returned);leader=p.entity;
@@ -186,6 +206,7 @@ int main() {
     Check(!controls.SetMemberName("ended").returned && member_calls==writes);during_string={};
     Check(!controls.FollowAnimation(p).returned);
     Check(!controls.SetVisibility({"ended",false}).returned && visibility_sets==4);
+    Check(!controls.PlayIdle(expected_idle).returned && idle_calls==2);
     Check(controls.Close() && controls.Close() && roots.size()==creation_roots);
     Check(!controls.SetMemberName("closed").returned);
     a.Remove();b.Remove();c.Remove();a.Service(frame);b.Service(frame);c.Service(frame);
