@@ -27,4 +27,27 @@ ReferenceListMethods ResolveReferenceListMethods(const DeclaredType& type,const 
 ReferenceListMethods ResolveReturnedReferenceList(RuntimeMetadata& metadata,Method getter,const char* element_type) {
     return ResolveReferenceListMethods(metadata.ReadType(metadata.ReturnType(getter)),element_type);
 }
+ReferenceListMethods ResolveReferenceListHierarchy(const std::vector<DeclaredType>& types,const char* element_type) {
+    ReferenceListMethods out;
+    const auto find=[&](const char* name,const char* result,std::initializer_list<const char*> parameters) {
+        const std::vector<std::string> expected(parameters.begin(),parameters.end());
+        for(const auto& type:types)for(const auto& method:type.methods)
+            if(method.name==name && method.result==result && method.parameters==expected && !method.is_static) {
+                try {MetadataResolver resolver({type});return resolver.Resolve(type.name_space.c_str(),type.name.c_str(),name,result,parameters);}
+                catch(const std::exception& e){out.binding_errors.push_back(e.what());return Method{};}
+            }
+        out.binding_errors.push_back(std::string("reference list hierarchy has no ")+name);return Method{};
+    };
+    out.count=find("get_Count","System.Int32",{});
+    out.item=find("get_Item",element_type,{"System.Int32"});
+    return out;
+}
+ReferenceListMethods ResolveReferenceListHierarchy(RuntimeMetadata& metadata,RuntimeType type,const char* element_type) {
+    std::vector<DeclaredType> types;std::vector<RuntimeType> visited;
+    while(type) {
+        for(auto previous:visited)if(previous==type)throw std::runtime_error("reference list parent cycle");
+        visited.push_back(type);types.push_back(metadata.ReadType(type));type=metadata.ParentType(type);
+    }
+    return ResolveReferenceListHierarchy(types,element_type);
+}
 }

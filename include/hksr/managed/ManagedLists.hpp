@@ -22,5 +22,8 @@ private: std::shared_ptr<const ReferenceListMethods> methods_;
 // Use the exact constructed return type of the official list getter, not a
 // domain-wide search for List`1 or a similarly named generic definition.
 HKSR_API ReferenceListMethods ResolveReferenceListMethods(const DeclaredType& constructed_type,const char* element_type);
+// Derived-first declarations retain each closed generic owner's MethodInfo.
+HKSR_API ReferenceListMethods ResolveReferenceListHierarchy(const std::vector<DeclaredType>&,const char* element_type);
+HKSR_API ReferenceListMethods ResolveReferenceListHierarchy(RuntimeMetadata&,RuntimeType,const char* element_type);
 HKSR_API ReferenceListMethods ResolveReturnedReferenceList(RuntimeMetadata& metadata,Method getter,const char* element_type);
 }

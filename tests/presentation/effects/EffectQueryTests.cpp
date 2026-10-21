@@ -196,11 +196,21 @@ void TestEffectQueries() {
     Provider provider;ReferenceMethods refs{M(&Keep),M(&Target),M(&Free),{}, {}};
     {
         ViewMetadata metadata;
+        const auto base=metadata.ReadObjectType(nullptr);
+        DeclaredType derived{"RPG","PoolList`1",{}};
+        auto inherited=ResolveReferenceListHierarchy(std::vector<DeclaredType>{derived,base},"RPG.Client.MonoEffectPluginBase");
+        Check(inherited.binding_errors.empty() && inherited.count.metadata==base.methods[0].entry.metadata &&
+            inherited.item.code==base.methods[1].entry.code);
+        derived.methods={{"get_Count","System.Int32",{},false,{}}};
+        Check(!ResolveReferenceListHierarchy(std::vector<DeclaredType>{derived,base},"RPG.Client.MonoEffectPluginBase").binding_errors.empty());
+        Check(!ResolveReferenceListHierarchy(std::vector<DeclaredType>{base},"System.String").binding_errors.empty());
         auto classify=MakeEffectViewClassifier(metadata,metadata,refs,[](const char*,const char* owner){
             const auto field=[&](const char* name,const char* type,std::size_t offset){return DeclaredField{"RPG.Client",owner,name,type,offset,6,true};};
             if(std::string(owner)=="MonoEffect")return std::vector<DeclaredField>{field("<IsUIEffect>k__BackingField","System.Boolean",offsetof(ViewEffect,ui))};
             if(std::string(owner)=="MonoEffectBehavior")return std::vector<DeclaredField>{field("_EffectPluginList","RPG.PoolList<RPG.Client.MonoEffectPluginBase>",offsetof(ViewBehavior,list))};
             return std::vector<DeclaredField>{field("PositionOption","RPG.Client.PositionFollowOption",offsetof(ViewPlugin,position))};
+        },[&](void* list){
+            return ResolveReferenceListHierarchy(std::vector<DeclaredType>{{"RPG","PoolList`1",{}},metadata.ReadObjectType(list)},"RPG.Client.MonoEffectPluginBase");
         });
         ViewEffect effect;ViewPlugin local{true,1},billboard{true,0},main{true,2},ui{true,4},ui3d{true,6},player{true,7},audio{false,2};
         ViewPlugins plugins{{&audio,&local,&billboard,&player}};ViewBehavior behavior{7,&plugins};

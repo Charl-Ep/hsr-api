@@ -21,11 +21,13 @@ struct Classifier {
     ObjectMetadata& metadata;TypeRelationships& relationships;ReferenceMethods refs;
     std::size_t ui,list,position;
     std::unique_ptr<ManagedReferenceList> plugins;
+    std::function<ReferenceListMethods(void*)> resolve_list;
     std::vector<std::unique_ptr<ManagedRoots>> unresolved;
-    Classifier(ObjectMetadata& m,TypeRelationships& t,ReferenceMethods r,const TimelineRegistryAccess::Fields& fields):metadata(m),relationships(t),refs(r),
+    Classifier(ObjectMetadata& m,TypeRelationships& t,ReferenceMethods r,const TimelineRegistryAccess::Fields& fields,
+        std::function<ReferenceListMethods(void*)> resolve):metadata(m),relationships(t),refs(r),
         ui(Field(fields,"MonoEffect","<IsUIEffect>k__BackingField","System.Boolean")),
         list(Field(fields,"MonoEffectBehavior","_EffectPluginList","RPG.PoolList<RPG.Client.MonoEffectPluginBase>")),
-        position(Field(fields,"MonoEffectPluginFollow","PositionOption","RPG.Client.PositionFollowOption")){}
+        position(Field(fields,"MonoEffectPluginFollow","PositionOption","RPG.Client.PositionFollowOption")),resolve_list(std::move(resolve)){}
     bool Classify(void* behavior,void* effect) {
         if(Read<bool>(effect,ui))return true;
         void* collection=Read<void*>(behavior,list);
@@ -44,7 +46,7 @@ struct Classifier {
         try {
             keep(collection);
             if(!plugins) {
-                auto methods=ResolveReferenceListMethods(metadata.ReadObjectType(collection),"RPG.Client.MonoEffectPluginBase");
+                auto methods=resolve_list(collection);
                 if(!methods.binding_errors.empty())throw std::runtime_error(methods.binding_errors.front());
                 plugins=std::make_unique<ManagedReferenceList>(std::move(methods));
             }
@@ -66,8 +68,9 @@ struct Classifier {
     }
 };
 }
-EffectViewPolicy::Classify MakeEffectViewClassifier(ObjectMetadata& m,TypeRelationships& t,ReferenceMethods r,TimelineRegistryAccess::Fields fields) {
-    const auto state=std::make_shared<Classifier>(m,t,r,fields);
+EffectViewPolicy::Classify MakeEffectViewClassifier(ObjectMetadata& m,TypeRelationships& t,ReferenceMethods r,TimelineRegistryAccess::Fields fields,
+    std::function<ReferenceListMethods(void*)> resolve) {
+    const auto state=std::make_shared<Classifier>(m,t,r,fields,std::move(resolve));
     return [state](void* behavior,void* effect){return state->Classify(behavior,effect);};
 }
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include "EffectQueries.hpp"
+#include <hksr/managed/ManagedLists.hpp>
 #include <map>
 
 namespace hksr::sdk_v1::detail {
@@ -39,5 +40,5 @@ private:
 // Classification from the loaded effect's own component configuration.
 // Does not enumerate scene objects, load assets, or inspect shader names.
 HKSR_API EffectViewPolicy::Classify MakeEffectViewClassifier(ObjectMetadata&,TypeRelationships&,ReferenceMethods,
-    TimelineRegistryAccess::Fields);
+    TimelineRegistryAccess::Fields,std::function<ReferenceListMethods(void*)>);
 }

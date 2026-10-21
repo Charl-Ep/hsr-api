@@ -71,7 +71,8 @@ struct PresentationIsolation::State::Shared {
         queries=std::make_unique<detail::EffectQueries>(m,m,m,refs,fields,effect_source,log);
         effects=std::make_unique<detail::EffectScopes>(m,refs,fields,effect_source,log,
             [this](auto owner){return clients.Policy(Origin(owner)).allow_main_camera;},
-            std::make_shared<detail::EffectViewPolicy>(detail::MakeEffectViewClassifier(m,m,refs,fields),
+            std::make_shared<detail::EffectViewPolicy>(detail::MakeEffectViewClassifier(m,m,refs,fields,
+                [&m](void* list){return ResolveReferenceListHierarchy(m,m.ObjectType(list),"RPG.Client.MonoEffectPluginBase");}),
                 [this](auto owner){return clients.CameraPresentations(Origin(owner));},
                 [this](auto ref,auto owner,bool visible){Log("camera-presentation effect="+std::to_string(ref.id)+
                     " entity="+std::to_string(owner.entity)+" generation="+std::to_string(owner.lifetime)+" visible="+std::to_string(visible));}));
