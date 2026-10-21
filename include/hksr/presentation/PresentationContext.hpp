@@ -161,6 +161,10 @@ public:
         std::function<void(const AnimationSequenceObservation&)>) const;
     AnimationEventDefinitions ReadEventDefinitions(const AnimationEventSource&) const;
     void Activate();
+    // Owner-thread visibility preference for this client's effects. Does not
+    // grant main-camera control or environment-write permissions. Existing
+    // effects take the value on their next official visibility evaluation.
+    void SetCameraPresentations(bool enabled);
     void Collect();
     // Call only after owned requests, registrations and entities are closed.
     // Continues cleanup without repeating uncertain reference decrements;

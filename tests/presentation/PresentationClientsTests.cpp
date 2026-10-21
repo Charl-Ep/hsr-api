@@ -23,6 +23,13 @@ int main() try {
     const auto ca=a->clients.Add({true,false},[&](const auto&){++log_a;});
     const auto cb=b->clients.Add({false,true},[&](const auto&){++log_b;});
     a->clients.Remember(ca,Origin(1));b->clients.Remember(cb,Origin(2));
+    a->clients.SetCameraPresentations(ca,false);
+    Check(!a->clients.CameraPresentations(Origin(1)) && b->clients.CameraPresentations(Origin(2)),"effect view policies crossed clients");
+    a->clients.Remember(ca,Origin(4));
+    Check(!a->clients.CameraPresentations(Origin(4)),"new source lost visibility preference");
+    a->clients.SetCameraPresentations(ca,true);
+    Check(a->clients.CameraPresentations(Origin(1)) && a->clients.CameraPresentations(Origin(4)),"existing sources did not update");
+    a->clients.SetCameraPresentations(ca,false);
     Check(a->clients.Owns(ca,Origin(1)) && !a->clients.Owns(cb,Origin(1)) && !a->clients.Owns(ca,Origin(1,2)),"source attribution crossed clients or generations");
     Check(!a->clients.Owns(ca,{}) && !a->clients.Owns(ca,Origin(99)),"public source attributed to client");
     Check(a->clients.Policy(Origin(1)).allow_main_camera && !b->clients.Policy(Origin(2)).allow_main_camera,"camera policies leaked between clients");
@@ -31,6 +38,7 @@ int main() try {
     Check(rejected,"second client stole first client's origin");
     a->clients.Log("first");Check(log_a==1 && log_b==1,"active diagnostics missing");
     a->clients.Detach(ca);a.reset();
+    Check(!b->clients.CameraPresentations(Origin(1)),"retired source lost visibility preference");
     auto c=slot.Acquire(create);const auto cc=c->clients.Add({},[&](const auto&){++log_c;});
     c->clients.Remember(cc,Origin(3));c->clients.Remember(cc,Origin(1,2));
     Check(!c->clients.Owns(ca,Origin(1)) && !c->clients.Owns(cc,Origin(1)) && c->clients.Owns(cc,Origin(1,2)),"retired client or old incarnation attributed to new client");

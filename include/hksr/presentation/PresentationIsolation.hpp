@@ -16,6 +16,7 @@ public:
     PresentationIsolation(const PresentationIsolation&)=delete;
     PresentationIsolation& operator=(const PresentationIsolation&)=delete;
     HKSR_API void ActivateOnCurrentThread();
+    HKSR_API void SetCameraPresentations(bool enabled);
     HKSR_API void RememberBirth(EntityOrigin);
     // Caller holds the entity alive. Empty for public or other-client sources.
     // Historical creation provenance, not permission to mutate a retired actor.

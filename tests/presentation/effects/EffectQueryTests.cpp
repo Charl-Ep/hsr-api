@@ -15,9 +15,15 @@ enum Tag {ManagerTag,ListTag,FieldTag,TypeTag,TextTag};
 struct Effect;
 struct Request {void* caster=nullptr;void* target=nullptr;void* parameter=nullptr;Effect* instance=nullptr;unsigned id=0;bool released=false;int alive=0;};
 struct Effect {Request* request=nullptr;std::wstring name;void* behavior_target=nullptr;bool native_alive=true;};
-struct Behavior {Effect* owner=nullptr;};
+// Detours observe fields hidden from the optimizer's model of the stub body.
+struct Behavior {Effect* volatile owner=nullptr;bool visible=false;};
+__declspec(noinline) void __fastcall EffectVisible(Behavior* behavior,bool visible,void*) {behavior->visible=visible;}
 struct Plugin {int padding=34;Effect* owner=nullptr;};
 struct CameraController {Plugin* plugin=nullptr;bool enabled=false;int subscriptions=0,writes=0;};
+struct ViewPlugin {bool follow=false;int position=0;};
+struct ViewPlugins {std::vector<ViewPlugin*> entries;};
+struct ViewBehavior {int padding=7;ViewPlugins* list=nullptr;};
+struct ViewEffect {int padding=9;bool ui=false;};
 struct List {Tag tag=ListTag;std::vector<Effect*> rows;};
 struct Manager {Tag tag=ManagerTag;List* list=nullptr;int unrelated=123;};
 struct Text {Tag tag=TextTag;std::wstring value;};
@@ -77,6 +83,16 @@ DWORD InvokeEffect(void* object) {
     __except(EXCEPTION_EXECUTE_HANDLER){return GetExceptionCode();}
 }
 template<class F>Method M(F f,void* info=&method_info){return {reinterpret_cast<void*>(f),info};}
+struct ViewMetadata final:ObjectMetadata,TypeRelationships {
+    DeclaredType ReadObjectType(void*)override {
+        return {"RPG","PoolList<MonoEffectPluginBase>",{
+            {"get_Count","System.Int32",{},false,M(+[](ViewPlugins* p,void*){return static_cast<int>(p->entries.size());})},
+            {"get_Item","RPG.Client.MonoEffectPluginBase",{"System.Int32"},false,M(+[](ViewPlugins* p,int i,void*)->void*{return p->entries.at(i);})}}};
+    }
+    std::vector<DeclaredField> ReadObjectFields(void*)override{return {};}
+    RuntimeTypeName ReadObjectTypeName(void* p)override{return {"RPG.Client",static_cast<ViewPlugin*>(p)->follow?"MonoEffectPluginFollow":"MonoEffectPluginAudio"};}
+    bool TypeDerivesFrom(const char*,const char* name,const char*,const char* base)override{return std::string(name)==base;}
+};
 int __fastcall Keep(void* object,int,int kind,void*){Check(kind==2);handles[++next_handle]=object;return next_handle;}
 void* __fastcall Target(int id,void*){return handles.at(id);}
 void __fastcall Free(int id,void*){++free_calls;if(throw_release)RaiseException(0xe0753011,0,0,nullptr);handles.erase(id);}
@@ -134,6 +150,7 @@ struct Provider:MethodResolver,ObjectMetadata,ManagedObjects {
         if(key=="ResetPlugins")return M(EffectVoid<1>);
         if(key=="DisposePlugins")return M(EffectVoid<2>);
         if(key=="Tick")return M(EffectTick);
+        if(key=="SetVisible")return M(EffectVisible);
         if(key=="EFPBCKGBFBG")return M(EffectVoid<4>);
         if(key=="HPNDIIPEFLJ")return M(CameraPlugin);
         if(key=="NMIPDBNGLBH")return M(CameraEnable,&camera_info);
@@ -177,6 +194,25 @@ std::vector<DeclaredField> Fields(const char*,const char* owner) {
 }
 void TestEffectQueries() {
     Provider provider;ReferenceMethods refs{M(&Keep),M(&Target),M(&Free),{}, {}};
+    {
+        ViewMetadata metadata;
+        auto classify=MakeEffectViewClassifier(metadata,metadata,refs,[](const char*,const char* owner){
+            const auto field=[&](const char* name,const char* type,std::size_t offset){return DeclaredField{"RPG.Client",owner,name,type,offset,6,true};};
+            if(std::string(owner)=="MonoEffect")return std::vector<DeclaredField>{field("<IsUIEffect>k__BackingField","System.Boolean",offsetof(ViewEffect,ui))};
+            if(std::string(owner)=="MonoEffectBehavior")return std::vector<DeclaredField>{field("_EffectPluginList","RPG.PoolList<RPG.Client.MonoEffectPluginBase>",offsetof(ViewBehavior,list))};
+            return std::vector<DeclaredField>{field("PositionOption","RPG.Client.PositionFollowOption",offsetof(ViewPlugin,position))};
+        });
+        ViewEffect effect;ViewPlugin local{true,1},billboard{true,0},main{true,2},ui{true,4},ui3d{true,6},player{true,7},audio{false,2};
+        ViewPlugins plugins{{&audio,&local,&billboard,&player}};ViewBehavior behavior{7,&plugins};
+        Check(!classify(&behavior,&effect) && handles.empty());
+        plugins.entries.push_back(&main);Check(classify(&behavior,&effect) && handles.empty());
+        plugins.entries={&ui};Check(classify(&behavior,&effect));
+        plugins.entries={&ui3d};Check(classify(&behavior,&effect));
+        effect.ui=true;behavior.list=nullptr;Check(classify(&behavior,&effect));
+        effect.ui=false;bool rejected=false;try{classify(&behavior,&effect);}catch(...){rejected=true;}
+        Check(rejected && handles.empty());
+        behavior.list=&plugins;plugins.entries={};Check(!classify(&behavior,&effect) && handles.empty());
+    }
     int entity_a,entity_b,entity_public,target_a,target_b;
     const TimelineOwner a{1,reinterpret_cast<std::uintptr_t>(&entity_a),1},b{1,reinterpret_cast<std::uintptr_t>(&entity_b),2};
     Request ra,rb,rp;ra.caster=&entity_a;rb.caster=&entity_b;rp.caster=&entity_public;
@@ -185,7 +221,8 @@ void TestEffectQueries() {
     ra.instance=&ea;rb.instance=&eb;rp.instance=&ep;
     List list{ListTag,{&eb,nullptr,&ea,&ep}};Manager manager{ManagerTag,&list};real_manager=&manager;
     Text query{TextTag,L"same"},empty{TextTag,L""};std::vector<std::string> logs;
-    bool bad_source=false,change_generation=false,owned_null_request=false;
+    volatile bool bad_source=false;
+    bool change_generation=false,owned_null_request=false;
     const auto source=[&](EffectReference ref,const EffectRelationsSnapshot& facts)->std::optional<TimelineOwner> {
             if(bad_source)throw std::runtime_error("unknown source");
             if(change_generation && ref.parameters==&ra)++ra.id;
@@ -355,6 +392,43 @@ void TestEffectQueries() {
         EffectScopes observe(provider,refs,Fields,source,{});observe.ActivateOnCurrentThread();
         CameraUpdate(&camera_a,&camera_update_info);Check(camera_a.writes==6 && camera_gets==stopped_gets);
         CameraEnable(&camera_a,false,&camera_info);Check(handles.empty());
+    }
+    {
+        volatile bool allow=false,camera=true,classification_error=false;volatile int classified=0;
+        auto view=std::make_shared<EffectViewPolicy>([&](void*,void*){
+            ++classified;if(classification_error)throw std::runtime_error("classification unavailable");return camera;
+        },[&](TimelineOwner owner){Check(owner==a);return allow;});
+        EffectScopes scopes(provider,refs,Fields,source,{}, {},view);scopes.ActivateOnCurrentThread();
+        Behavior owned{&ea},official{&ep};
+        EffectVisible(&owned,true,nullptr);Check(!owned.visible && classified==1);
+        EffectVisible(&owned,true,nullptr);Check(!owned.visible && classified==1); // no repeat native classification
+        allow=true;EffectVisible(&owned,true,nullptr);Check(owned.visible);
+        EffectVisible(&owned,false,nullptr);Check(!owned.visible); // game hide wins even when allowed
+        allow=false;
+        in_effect=[&](int){
+            EffectVisible(&owned,true,nullptr);Check(!owned.visible);
+            EffectVisible(&official,true,nullptr);Check(official.visible);
+            Check(TimelineCallScope::Current()==a);
+        };
+        EffectTick(&owned,0.01f,&method_info);in_effect={};Check(handles.empty());
+        in_effect=[&](int){
+            owned.owner=&ep;EffectVisible(&owned,true,nullptr);Check(owned.visible);
+            owned.owner=&ea;Check(TimelineCallScope::Current()==a);
+        };
+        EffectTick(&owned,0.01f,&method_info);in_effect={};
+        const auto before_pool=classified;
+        // Request pooling changes classification; character name/target are unchanged.
+        camera=false;++ra.id;EffectVisible(&owned,true,nullptr);Check(owned.visible && classified==before_pool+1);
+        camera=true;EffectVoid<0>(&owned,&method_info);EffectVisible(&owned,true,nullptr);
+        Check(!owned.visible && classified==before_pool+2);
+        bad_source=true;EffectVisible(&owned,true,nullptr);bad_source=false;Check(owned.visible);
+        classification_error=true;EffectVisible(&owned,true,nullptr);Check(owned.visible);classification_error=false;
+        EffectVisible(&owned,true,nullptr);Check(!owned.visible);
+        std::thread worker([&]{EffectVisible(&owned,true,nullptr);});worker.join();Check(owned.visible);
+        EffectVoid<2>(&owned,&method_info);scopes.Stop();EffectVisible(&owned,true,nullptr);Check(owned.visible);
+        Check(EffectViewPolicy::CameraSpace(false,2) && EffectViewPolicy::CameraSpace(false,4) && EffectViewPolicy::CameraSpace(false,6));
+        Check(!EffectViewPolicy::CameraSpace(false,1) && !EffectViewPolicy::CameraSpace(false,7));
+        Check(EffectViewPolicy::CameraSpace(true,0) && !EffectViewPolicy::CameraSpace(false,0));
     }
     {
         TimelineCallScope owned(a);

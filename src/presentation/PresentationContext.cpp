@@ -333,6 +333,11 @@ void PresentationContext::Prepare(RuntimeMetadata& metadata,RuntimeCapabilities 
 EntityCreationScope::BirthObserver PresentationContext::BirthObserver() const {
     return [s=storage_->state](EntityOrigin origin){if(s->isolation)s->isolation->RememberBirth(origin);};
 }
+void PresentationContext::SetCameraPresentations(bool enabled) {
+    auto& s=*storage_->state;
+    if(!s.isolation)throw std::runtime_error("effect visibility service unavailable");
+    s.isolation->SetCameraPresentations(enabled);
+}
 std::function<std::unique_ptr<CharacterOutfit>()> PresentationContext::Outfits() const {
     if(!storage_->state->metadata)return {};
     return [s=storage_->state]{return std::make_unique<CharacterOutfit>(*s->metadata,*s->metadata,s->objects,s->bindings.references,s->bindings.entity);};

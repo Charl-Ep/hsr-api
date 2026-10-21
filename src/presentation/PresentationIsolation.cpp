@@ -70,7 +70,11 @@ struct PresentationIsolation::State::Shared {
         const detail::EffectQueries::Source effect_source=[this](auto ref,const auto& facts){return Owner(sources.Identify(ref,facts));};
         queries=std::make_unique<detail::EffectQueries>(m,m,m,refs,fields,effect_source,log);
         effects=std::make_unique<detail::EffectScopes>(m,refs,fields,effect_source,log,
-            [this](auto owner){return clients.Policy(Origin(owner)).allow_main_camera;});
+            [this](auto owner){return clients.Policy(Origin(owner)).allow_main_camera;},
+            std::make_shared<detail::EffectViewPolicy>(detail::MakeEffectViewClassifier(m,m,refs,fields),
+                [this](auto owner){return clients.CameraPresentations(Origin(owner));},
+                [this](auto ref,auto owner,bool visible){Log("camera-presentation effect="+std::to_string(ref.id)+
+                    " entity="+std::to_string(owner.entity)+" generation="+std::to_string(owner.lifetime)+" visible="+std::to_string(visible));}));
         environment=std::make_unique<detail::TimelineEnvironment>(m,m,refs,fields,
             [this](void* director){return registry->ObserveDirector(director);},
             [this](auto owner,auto){return clients.Policy(Origin(owner)).allow_timeline_environment;},log);
@@ -130,6 +134,10 @@ PresentationIsolation::PresentationIsolation(RuntimeMetadata& m,ReferenceMethods
     :state_(std::make_unique<State>(m,refs,p,std::move(trace))){}
 PresentationIsolation::~PresentationIsolation()=default;
 void PresentationIsolation::ActivateOnCurrentThread(){if(state_)state_->service->Activate();}
+void PresentationIsolation::SetCameraPresentations(bool enabled) {
+    if(!state_)throw std::logic_error("presentation client retired");
+    state_->service->CheckThread();state_->service->clients.SetCameraPresentations(state_->client,enabled);
+}
 void PresentationIsolation::RememberBirth(EntityOrigin origin){
     if(!state_)throw std::logic_error("presentation client retired");
     auto& service=*state_->service;service.CheckThread();

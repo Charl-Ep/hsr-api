@@ -31,11 +31,15 @@ struct EffectScopes::State {
     static Router& Route(){static auto* r=new Router;return *r;}
     ReferenceMethods refs;EffectRelations relations;EffectQueries::Source source;EffectQueries::Trace trace;
     Method owner_mono,camera_plugin;AllowMainCamera allow_camera;
+    std::shared_ptr<EffectViewPolicy> view;
     std::size_t plugin_owner,request_offset,id_offset;
     std::atomic<DWORD> thread{0};
     struct Invocation {
         std::shared_ptr<State> state;ManagedRoots roots;std::vector<ManagedRootId> pins;
         std::unique_ptr<TimelineCallScope> scope;
+        void* object=nullptr;void* effect=nullptr;EffectReference request{};
+        std::optional<TimelineOwner> owner;
+        Invocation* previous=nullptr;
         explicit Invocation(std::shared_ptr<State> s):state(std::move(s)),roots(state->refs){}
         void Keep(void* p) {
             if(!p)return;
@@ -50,8 +54,9 @@ struct EffectScopes::State {
             pins.clear();return complete;
         }
     };
+    static Invocation*& Active(){static thread_local Invocation* value=nullptr;return value;}
     State(MethodResolver& m,ReferenceMethods r,const TimelineRegistryAccess::Fields& fields,
-        EffectQueries::Source s,EffectQueries::Trace t,AllowMainCamera allow):refs(r),relations(fields("RPG.Client","TriggerEffectParams")),source(std::move(s)),trace(std::move(t)),allow_camera(std::move(allow)) {
+        EffectQueries::Source s,EffectQueries::Trace t,AllowMainCamera allow,std::shared_ptr<EffectViewPolicy> v):refs(r),relations(fields("RPG.Client","TriggerEffectParams")),source(std::move(s)),trace(std::move(t)),allow_camera(std::move(allow)),view(std::move(v)) {
         owner_mono=m.Resolve("RPG.Client","MonoEffectBehavior","get_OwnerMono","RPG.Client.MonoEffect",{});
         camera_plugin=m.Resolve("","JCNLLEPCBGI","HPNDIIPEFLJ","RPG.Client.MonoEffectPluginCtrlCamera",{});
         plugin_owner=Field(fields("RPG.Client","MonoEffectPluginBase"),"MonoEffectPluginBase","_OwnerEffect","RPG.Client.MonoEffect");
@@ -67,6 +72,7 @@ struct EffectScopes::State {
         std::unique_ptr<Invocation> inv;
         try {
             inv=std::make_unique<Invocation>(state);
+            inv->object=object;
             // Even getter/source failure must not inherit a surrounding actor.
             inv->scope=std::make_unique<TimelineCallScope>(std::nullopt,false);
             inv->Keep(object);void* effect=nullptr;
@@ -88,26 +94,63 @@ struct EffectScopes::State {
             inv->Keep(facts.caster.object);const auto owner=state->source(ref,facts);
             if(Read<void*>(effect,state->request_offset)!=request || Read<std::uint32_t>(request,state->id_offset)!=ref.id)
                 throw std::runtime_error("effect request changed during source resolution");
+            inv->effect=effect;inv->request=ref;inv->owner=owner;
             inv->scope.reset();inv->scope=std::make_unique<TimelineCallScope>(owner);
         }catch(const std::exception& e){state->Log(e.what());}
         catch(...){state->Log("source resolution failed");}
+        if(inv){inv->previous=Active();Active()=inv.get();}
         return inv.release();
     }
     static void Leave(Invocation* raw) noexcept {
         if(!raw)return;
+        Active()=raw->previous;
         std::unique_ptr<Invocation> inv(raw);
         try{if(!inv->Close()){inv->state->Log("GC cleanup unresolved; receipts retained");inv.release();}}
         catch(...){inv->scope.reset();inv->state->Log("GC cleanup failed; receipts retained");inv.release();}
     }
     template<std::size_t Index,bool Plugin=false>static void __fastcall Void(void* object,void* info) {
         auto* inv=Enter(object,Plugin?OwnerKind::Plugin:OwnerKind::Behavior);
+        if constexpr(Index<=2)if(inv && inv->state->view)inv->state->view->Forget(object);
         __try{reinterpret_cast<void(__fastcall*)(void*,void*)>(Route().hooks.Original(Index))(object,info);}
-        __finally{Leave(inv);}
+        __finally{
+            if constexpr(Index==2)if(inv && inv->state->view)inv->state->view->Forget(object);
+            Leave(inv);
+        }
     }
     static void __fastcall Tick(void* object,float delta,void* info) {
         auto* inv=Enter(object,OwnerKind::Behavior);
         __try{reinterpret_cast<void(__fastcall*)(void*,float,void*)>(Route().hooks.Original(3))(object,delta,info);}
         __finally{Leave(inv);}
+    }
+    static bool FilterVisible(Invocation* inv,void* object,bool requested) noexcept {
+        if(inv && inv->object==object && inv->state->view) {
+            try {
+                if(inv->owner)return inv->state->view->Visible(object,inv->effect,inv->request,*inv->owner,requested);
+                inv->state->view->Forget(object);
+            }catch(const std::exception& e){inv->state->Log(std::string("view classification failed; original forwarded: ")+e.what());}
+            catch(...){inv->state->Log("view classification failed; original forwarded");}
+        }
+        return requested;
+    }
+    static bool Reusable(Invocation* inv,void* object) noexcept {
+        if(!inv || inv->object!=object || !inv->effect || inv->state->thread.load()!=GetCurrentThreadId())return false;
+        try {
+            void* effect=nullptr;
+            return native::Call(inv->state->owner_mono,&effect,object).returned && effect==inv->effect &&
+                Read<void*>(effect,inv->state->request_offset)==inv->request.parameters &&
+                Read<std::uint32_t>(inv->request.parameters,inv->state->id_offset)==inv->request.id;
+        }catch(...){return false;}
+    }
+    static void __fastcall Visible(void* object,bool requested,void* info) {
+        // Reuse the exact current behavior's retained source. A nested official
+        // effect must resolve its own identity, never inherit the caller's.
+        auto* active=Active();
+        const bool reuse=Reusable(active,object);
+        auto* own=reuse?nullptr:Enter(object,OwnerKind::Behavior);
+        auto* inv=reuse?active:own;
+        const bool visible=FilterVisible(inv,object,requested);
+        __try{reinterpret_cast<void(__fastcall*)(void*,bool,void*)>(Route().hooks.Original(7))(object,visible,info);}
+        __finally{Leave(own);}
     }
     static bool BlockCamera(Invocation* inv) noexcept {
         if(!inv || !TimelineCallScope::Established())return false;
@@ -139,22 +182,23 @@ struct EffectScopes::State {
 };
 struct EffectScopes::Holder {std::shared_ptr<State> state;};
 EffectScopes::EffectScopes(MethodResolver& m,ReferenceMethods refs,TimelineRegistryAccess::Fields fields,
-    EffectQueries::Source source,EffectQueries::Trace trace,AllowMainCamera allow) {
+    EffectQueries::Source source,EffectQueries::Trace trace,AllowMainCamera allow,std::shared_ptr<EffectViewPolicy> view) {
     if(!source)throw std::invalid_argument("effect scope source resolver required");
     auto& r=State::Route();std::lock_guard<std::mutex> lock(r.install);
     if(std::atomic_load(&r.current))throw std::logic_error("effect scopes already owned");
     if(r.hooks.Pending() && !r.installed)throw std::logic_error("effect scope installation incomplete");
-    auto state=std::make_shared<State>(m,refs,fields,std::move(source),std::move(trace),std::move(allow));
+    auto state=std::make_shared<State>(m,refs,fields,std::move(source),std::move(trace),std::move(allow),std::move(view));
     const auto camera_enable=m.Resolve("","JCNLLEPCBGI","NMIPDBNGLBH","System.Void",{"System.Boolean"});
     state->camera_enable_info=camera_enable.metadata;
     if(!r.hooks.Pending()) {
-        const std::array<Method,7> entries{{
+        const std::array<Method,8> entries{{
             m.Resolve("RPG.Client","MonoEffectBehavior","PreResetPlugins","System.Void",{}),
             m.Resolve("RPG.Client","MonoEffectBehavior","ResetPlugins","System.Void",{}),
             m.Resolve("RPG.Client","MonoEffectBehavior","DisposePlugins","System.Void",{}),
             m.Resolve("RPG.Client","MonoEffectBehavior","Tick","System.Void",{"System.Single"}),
             m.Resolve("RPG.Client","MonoEffectFixedCRPPlugin","EFPBCKGBFBG","System.Void",{}),
-            camera_enable,m.Resolve("","JCNLLEPCBGI","BLOMJCEJLFG","System.Void",{})}};
+            camera_enable,m.Resolve("","JCNLLEPCBGI","BLOMJCEJLFG","System.Void",{}),
+            m.Resolve("RPG.Client","MonoEffectBehavior","SetVisible","System.Void",{"System.Boolean"})}};
         r.hooks.Install({
             {"effect pre-reset plugins",entries[0].code,reinterpret_cast<void*>(&State::Void<0>)},
             {"effect reset plugins",entries[1].code,reinterpret_cast<void*>(&State::Void<1>)},
@@ -162,7 +206,8 @@ EffectScopes::EffectScopes(MethodResolver& m,ReferenceMethods refs,TimelineRegis
             {"effect tick",entries[3].code,reinterpret_cast<void*>(&State::Tick)},
             {"effect fixed CRP query",entries[4].code,reinterpret_cast<void*>(&State::Void<4,true>)},
             {"effect main camera enable",entries[5].code,reinterpret_cast<void*>(&State::CameraEnabled)},
-            {"effect main camera update",entries[6].code,reinterpret_cast<void*>(&State::CameraUpdate)}});r.installed=true;
+            {"effect main camera update",entries[6].code,reinterpret_cast<void*>(&State::CameraUpdate)},
+            {"effect visibility",entries[7].code,reinterpret_cast<void*>(&State::Visible)}});r.installed=true;
     }
     holder_=new Holder{state};std::atomic_store(&r.current,std::move(state));
 }

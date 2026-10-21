@@ -28,8 +28,8 @@ public:
 // Retired owners retain policy values but no client callback or DLL dependency.
 class PresentationClients {
     using Key=std::tuple<std::uintptr_t,std::uintptr_t,std::uint64_t>;
-    struct Client {PresentationIsolationPolicy policy;PresentationIsolation::Trace trace;};
-    struct Source {std::uint64_t client;PresentationIsolationPolicy policy;};
+    struct Client {PresentationIsolationPolicy policy;PresentationIsolation::Trace trace;bool camera_presentations=true;};
+    struct Source {std::uint64_t client;PresentationIsolationPolicy policy;bool camera_presentations=true;};
     std::recursive_mutex mutex_;
     std::uint64_t next_=0;
     std::map<std::uint64_t,Client> clients_;
@@ -49,7 +49,7 @@ public:
         std::lock_guard<std::recursive_mutex> lock(mutex_);
         const auto client=clients_.find(id);
         if(client==clients_.end())throw std::logic_error("presentation client retired");
-        const auto result=sources_.emplace(KeyOf(origin),Source{id,client->second.policy});
+        const auto result=sources_.emplace(KeyOf(origin),Source{id,client->second.policy,client->second.camera_presentations});
         if(!result.second && result.first->second.client!=id)
             throw std::logic_error("presentation origin already belongs to another client");
     }
@@ -58,6 +58,19 @@ public:
         const auto i=sources_.find(KeyOf(origin));
         if(i==sources_.end())throw std::logic_error("presentation owner policy unavailable");
         return i->second.policy;
+    }
+    void SetCameraPresentations(std::uint64_t id,bool enabled) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        const auto client=clients_.find(id);
+        if(client==clients_.end())throw std::logic_error("presentation client retired");
+        client->second.camera_presentations=enabled;
+        for(auto& item:sources_)if(item.second.client==id)item.second.camera_presentations=enabled;
+    }
+    bool CameraPresentations(EntityOrigin origin) {
+        std::lock_guard<std::recursive_mutex> lock(mutex_);
+        const auto i=sources_.find(KeyOf(origin));
+        if(i==sources_.end())throw std::logic_error("presentation owner policy unavailable");
+        return i->second.camera_presentations;
     }
     void RequireOwner(std::uint64_t id,EntityOrigin origin) {
         std::lock_guard<std::recursive_mutex> lock(mutex_);

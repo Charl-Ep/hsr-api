@@ -28,6 +28,7 @@ Call `PresentationContext::Create(metadata, capabilities, policy, trace)` from `
 | `ReadEventReceiver(entity, world)` | Current event consumer, or null when unavailable |
 | `CreateCatalog()`, `CreateMouseMode()` | Catalog reader and mouse-mode lease |
 | `BindingErrors()`, `IsolationStatus()` | Preparation diagnostics and isolation state |
+| `SetCameraPresentations(enabled)` | Show or hide this client's UI and camera-position-following effects on their next visibility evaluation |
 
 Resource references require their provider to remain alive. Factories retain native context state beyond the wrapper's lifetime. Sharing a provider does not merge resource owners or retain borrowed game objects.
 
@@ -36,6 +37,8 @@ Activate the context on the official frame before creating owned entities. `Crea
 Task ancestry is resolved across namespaces. Unreadable branches retain their original references and are reported as `uninspected`; independently readable branches still receive policy edits. Copy or write failure leaves the original inputs unchanged. These diagnostics indicate incomplete isolation, not a verified safe configuration.
 
 Contexts share process-resident hooks and ownership records. Each client has its own policy and diagnostic sink; records are keyed by world, entity and generation. Retired clients' pending effects retain the policy needed to finish.
+
+Camera presentation visibility is independent of camera control and environment permissions. It preserves effect lifetime and the game's own visibility constraints. Actor attachment effects, LocalPlayer following and rotation-only billboards are not classified as camera presentations. Unresolved sources retain their original visibility and report diagnostics.
 
 Drain entities, effects and registrations before `Context::Close`. Continue explicit cleanup while it returns false. Destruction performs no substitute game cleanup.
 

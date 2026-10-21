@@ -1,9 +1,10 @@
 #pragma once
 #include "EffectQueries.hpp"
+#include "EffectViewPolicy.hpp"
 
 namespace hksr::sdk_v1::detail {
-// Sources for the audited per-effect plugin dispatch and FixedCRP name lookup.
-// Does not replace plugin scheduling, targets, configuration or cleanup. The
+// Sources for per-effect plugin dispatch, visibility and FixedCRP name lookup.
+// Scheduling, targets, asset configuration and cleanup remain original. The
 // global manager's EndOfLateTick is NOT a single effect's source boundary.
 class HKSR_API EffectScopes {
 public:
@@ -12,7 +13,8 @@ public:
     // the camera path entirely unchanged. Official/unknown sources are forwarded.
     using AllowMainCamera=std::function<bool(TimelineOwner)>;
     EffectScopes(MethodResolver&,ReferenceMethods,TimelineRegistryAccess::Fields,
-        EffectQueries::Source,EffectQueries::Trace,AllowMainCamera={});
+        EffectQueries::Source,EffectQueries::Trace,AllowMainCamera={},
+        std::shared_ptr<EffectViewPolicy> view={});
     ~EffectScopes();
     EffectScopes(const EffectScopes&)=delete;
     EffectScopes& operator=(const EffectScopes&)=delete;
