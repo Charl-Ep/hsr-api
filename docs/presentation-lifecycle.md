@@ -47,11 +47,11 @@ Drain entities, effects and registrations before `Context::Close`. Continue expl
 
 `StartSound` resolves AudioManager on demand and posts an event on the owned actor's current Art. Keep the returned `OwnedSoundRequest` and call `Service()` on the owner frame. `Cancel()` is data-only; subsequent servicing submits the stop. An entity, world or Art change cancels the request.
 
-`accepted` means the engine returned a nonzero logical ID; `started` and `ended` come from separate callbacks. `closed` means local roots and callback dispatch are released. Cancellation can close without an end callback; it does not assert audio-device silence. A bank-waiting request silently dropped by the engine remains unresolved until cancelled.
+`accepted` means the engine returned a nonzero logical ID; `started` and `ended` come from separate callbacks. `closed` means local roots and callback dispatch are released. Cancellation can close without an end callback; it does not assert audio-device silence. A bank-waiting request absent from both the queue and playing cache reports `dropped` and an error, not successful playback completion.
 
-Stops use AudioManager's logical-ID group semantics. Equal engine IDs cannot independently stop their individual plays. SDK callbacks and task identities remain distinct; logical IDs must not be used as application request IDs. Completion callbacks do not request music synchronization notifications or change event cooldowns.
+Cancellation selects queued and playing records by the request's completion delegate and emitter. Queued entries release their bank usage and list node; active entries stop their actual playing IDs. Other records sharing the logical ID are unchanged. Completion callbacks do not request music synchronization notifications or change event cooldowns. `SoundAccess::Stop` separately exposes the engine's logical-ID group operation; `OwnedSoundRequest` does not use it.
 
-The low-level `SoundAccess`, `SoundCallbacks` and `OwnedSoundRequest` APIs require retained inputs and caller-established ownership. They do not provide a fallback listener or discover an actor.
+The low-level `SoundAccess`, `SoundCallbacks`, `SoundTracking` and `OwnedSoundRequest` APIs require retained inputs and caller-established ownership. They do not provide a fallback listener or discover an actor. Tracking errors are distinct from an empty queue; unknown cancellation outcomes are not retried.
 
 ## NPC creation and events
 

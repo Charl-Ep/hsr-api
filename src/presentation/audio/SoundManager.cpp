@@ -4,7 +4,7 @@
 
 namespace hksr::sdk_v1::detail {
 SoundManager::SoundManager(RuntimeMetadata& metadata,ReferenceMethods references)
-    :metadata_(metadata),services_{references,SoundAccess(ResolveSoundAccess460(metadata)),ResolveSoundCallbacks460(metadata),{}},roots_(references){}
+    :metadata_(metadata),services_{references,SoundAccess(ResolveSoundAccess460(metadata)),ResolveSoundCallbacks460(metadata),{},ResolveSoundTracking460(metadata)},roots_(references){}
 SoundRequestServices SoundManager::Services() const{return services_;}
 void* SoundManager::Keep(ObjectResult value) {
     if(!value.call.returned || !value.object)throw std::runtime_error("audio metadata object unavailable");

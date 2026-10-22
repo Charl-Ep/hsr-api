@@ -125,6 +125,8 @@ set(HKSR_API_SOURCES
 
     # src/presentation/audio
     src/presentation/audio/SoundAccess.cpp
+    src/presentation/audio/SoundTracking.cpp
+    adapters/presentation/SoundTrackingMethods.cpp
     src/presentation/audio/SoundCallbacks.cpp
     src/presentation/audio/OwnedSoundRequest.cpp
     src/presentation/audio/SoundManager.cpp

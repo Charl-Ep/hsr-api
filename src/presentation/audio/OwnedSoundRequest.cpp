@@ -12,11 +12,13 @@ struct OwnedSoundRequest::State {
     std::vector<ManagedRootId> retained;
     std::shared_ptr<Inbox> inbox=std::make_shared<Inbox>();
     std::unique_ptr<SoundCallbacks> callbacks;
+    SoundTracking tracking;
     SoundRequestStatus status;
     void* manager=nullptr;
     void* emitter=nullptr;
+    void* ended_callback=nullptr;
     bool posted=false,stop_attempted=false,release=false,servicing=false;
-    explicit State(SoundRequestServices value):services(std::move(value)),roots(services.references){}
+    explicit State(SoundRequestServices value):services(std::move(value)),roots(services.references),tracking(services.tracking,services.references){}
     void Error(const char* text){if(status.error.empty())status.error=text;}
     bool Keep(void* value) {
         if(!value)return false;
@@ -36,11 +38,12 @@ struct OwnedSoundRequest::State {
         }
     }
     void Close() {
+        const bool tracking_closed=tracking.Close();
         const bool delegates=!callbacks || callbacks->Close();
         for(auto it=retained.begin();it!=retained.end();) {
             if(roots.Release(*it).complete){roots.Forget(*it);it=retained.erase(it);}else ++it;
         }
-        status.closed=delegates && retained.empty();
+        status.closed=tracking_closed && delegates && retained.empty();
         if(!status.closed)Error("audio reference release incomplete");
     }
 };
@@ -68,6 +71,7 @@ void OwnedSoundRequest::Start(void* manager,void* name,void* emitter) {
                     !delegates.ended.call.returned || !delegates.ended.object) {
                     s.Error("audio callbacks unavailable");s.release=true;
                 } else {
+                    s.ended_callback=delegates.ended.object;
                     s.posted=true;
                     s.status.submission=s.services.access.Post(manager,name,emitter,delegates.ended.object,delegates.began.object);
                     s.posted=s.status.submission.attempted;
@@ -98,11 +102,21 @@ void OwnedSoundRequest::Service(bool owner_current) {
         }
     }
     if(s.status.ended)s.release=true;
+    if(s.posted && !s.status.started && !s.status.ended && !s.status.cancelled && !s.release && s.status.submission.read.returned) {
+        try {
+            const auto presence=s.tracking.Observe(s.manager,s.status.submission.value,s.ended_callback,s.emitter);
+            s.Observe();
+            if(!presence.pending && !presence.playing && !s.status.started && !s.status.ended) {
+                s.status.dropped=true;s.Error("audio request disappeared before playback");s.release=true;
+            }
+        }catch(const std::exception& error){s.Error(error.what());}
+    }
     if(s.status.cancelled && !s.release) {
         if(!s.posted)s.release=true;
         else if(s.status.submission.value && !s.stop_attempted) {
             s.stop_attempted=true;
-            s.status.stop=s.services.access.Stop(s.manager,s.status.submission.value);
+            try{s.status.stop=s.tracking.Stop(s.manager,s.status.submission.value,s.ended_callback,s.emitter);}
+            catch(const std::exception& error){s.Error(error.what());}
             s.Observe();
             if(s.status.stop.returned || s.status.ended)s.release=true;
             else s.Error("audio stop outcome unknown");
