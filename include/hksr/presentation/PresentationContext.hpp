@@ -31,6 +31,7 @@ class NpcEventSupplement;
 class PresentationEffects;
 class EffectEntityFollow;
 class OwnedTimeline;
+class OwnedSoundRequest;
 class EffectSubmissions;
 struct EffectSubmission;
 struct EffectTriggerExecution;
@@ -139,6 +140,10 @@ public:
     // Engine-thread Common playback. The caller services the request through
     // pool return, including after the actor/action has ended.
     std::unique_ptr<OwnedTimeline> CreateTimeline(EntityToken,GameWorld*) const;
+    // Owner-frame request on this client's current model Art. The caller owns
+    // cancellation and services the receipt to closure before releasing it.
+    // No implicit main-listener fallback or ability/task execution.
+    std::unique_ptr<OwnedSoundRequest> StartSound(EntityToken,GameWorld*,const std::string& event) const;
     TextResult ReadEffectTriggerPath(const EffectTriggerExecution&) const;
     // Construct during preparation; activate and stop on the owner thread.
     // Receives only this client's entity generations, including creation-time

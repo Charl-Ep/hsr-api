@@ -19,6 +19,7 @@ Call `PresentationContext::Create(metadata, capabilities, policy, trace)` from `
 | `Controls()`, `Player()` | Control-session factory and current-player resolver |
 | `EffectServices()`, `Outfits()` | Optional effect and outfit services |
 | `CreateEffectEntityFollow()` | Request-scoped entity-follow plugin adapter |
+| `StartSound(entity, world, event)` | Audio request bound to this client's current model Art |
 | `CreateEffectObserver(before, after)` | Observer for official effect submissions from this client's entities |
 | `CreateEventConstructionObserver(before, tasks, after)` | Final animation-event inputs and task-list construction for this client's entities |
 | `CreateSequenceObserver(observe)` | Execution scopes for explicitly tracked event sequences |
@@ -41,6 +42,16 @@ Contexts share process-resident hooks and ownership records. Each client has its
 Camera presentation visibility is independent of camera control and environment permissions. It preserves effect lifetime and the game's own visibility constraints. Actor attachment effects, LocalPlayer following and rotation-only billboards are not classified as camera presentations. Unresolved sources retain their original visibility and report diagnostics.
 
 Drain entities, effects and registrations before `Context::Close`. Continue explicit cleanup while it returns false. Destruction performs no substitute game cleanup.
+
+## Sound requests
+
+`StartSound` resolves AudioManager on demand and posts an event on the owned actor's current Art. Keep the returned `OwnedSoundRequest` and call `Service()` on the owner frame. `Cancel()` is data-only; subsequent servicing submits the stop. An entity, world or Art change cancels the request.
+
+`accepted` means the engine returned a nonzero logical ID; `started` and `ended` come from separate callbacks. `closed` means local roots and callback dispatch are released. Cancellation can close without an end callback; it does not assert audio-device silence. A bank-waiting request silently dropped by the engine remains unresolved until cancelled.
+
+Stops use AudioManager's logical-ID group semantics. Equal engine IDs cannot independently stop their individual plays. SDK callbacks and task identities remain distinct; logical IDs must not be used as application request IDs. Completion callbacks do not request music synchronization notifications or change event cooldowns.
+
+The low-level `SoundAccess`, `SoundCallbacks` and `OwnedSoundRequest` APIs require retained inputs and caller-established ownership. They do not provide a fallback listener or discover an actor.
 
 ## NPC creation and events
 

@@ -34,6 +34,7 @@ set(HKSR_API_SOURCES
     adapters/presentation/EffectActionMethods.cpp
     adapters/presentation/EffectParameterMethods.cpp
     adapters/presentation/EffectCompletionMethods.cpp
+    adapters/presentation/SoundMethods.cpp
 
     # adapters/runtime
     adapters/runtime/MetadataBootstrap.cpp
@@ -121,6 +122,12 @@ set(HKSR_API_SOURCES
     src/presentation/PresentationResources.cpp
     src/presentation/PresentationIsolation.cpp
     src/presentation/PresentationSources.cpp
+
+    # src/presentation/audio
+    src/presentation/audio/SoundAccess.cpp
+    src/presentation/audio/SoundCallbacks.cpp
+    src/presentation/audio/OwnedSoundRequest.cpp
+    src/presentation/audio/SoundManager.cpp
 
     # src/presentation/effects
     src/presentation/effects/EffectAccess.cpp

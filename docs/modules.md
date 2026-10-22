@@ -12,6 +12,7 @@ Public headers are under `include/hksr/<module>`. Implementations and tests use 
 | `presentation/events` | Event registrations, baseline supplements and private configuration projection |
 | `presentation/timeline` | Timeline graphs, registries, call scopes and ownership |
 | `presentation/effects` | Effect requests, completion and cleanup |
+| `presentation/audio` | AudioManager requests, callback receipts and cancellation |
 | `control` | Placement, grounding, gaze, partner relations and mouse mode |
 | `unity` | Components, meshes, materials, renderers and resource lifetimes |
 | `platform` | Native hook infrastructure |

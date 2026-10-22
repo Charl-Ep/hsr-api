@@ -24,6 +24,7 @@
 #include <hksr/presentation/events/AnimationExitConfig.hpp>
 #include <hksr/presentation/events/AnimationEventPolicy.hpp>
 #include "events/OwnedAnimationTaskRules.hpp"
+#include "audio/SoundManager.hpp"
 #include <hksr/presentation/events/AnimationEventConstruction.hpp>
 #include <hksr/presentation/events/AnimationSequenceExecutions.hpp>
 #include <hksr/presentation/events/AnimationEventDefinitions.hpp>
@@ -61,6 +62,7 @@ struct PresentationContext::State {
     bool effect_control_closed=false;
     std::optional<EffectAccess> effect_access;
     EffectCompletionAllocation completion;
+    std::unique_ptr<detail::SoundManager> sounds;
     std::vector<std::unique_ptr<AnimationExitConfig>> exit_inputs;
     ManagedRoots roots;
     std::vector<ManagedRootId> handles;
@@ -430,6 +432,32 @@ std::unique_ptr<OwnedTimeline> PresentationContext::CreateTimeline(EntityToken t
     if(!s->isolation)throw std::logic_error("Timeline playback requires presentation isolation");
     return s->isolation->CreateTimeline({token,world});
 }
+std::unique_ptr<OwnedSoundRequest> PresentationContext::StartSound(EntityToken token,GameWorld* world,const std::string& event) const {
+    const auto s=storage_->state;
+    if(!s->metadata || s->effect_control_closed)throw std::logic_error("audio context unavailable");
+    if(event.empty() || event.find('\0')!=std::string::npos)throw std::invalid_argument("audio event name is empty or contains NUL");
+    const auto source=[s,token,world]() -> void* {
+        if(!world || s->effect_control_closed || !Alive(token) ||
+            s->owner.OwnedToken(token.entity).generation!=token.generation)return nullptr;
+        const auto entity=s->models->Entities().Read(token.entity);
+        if(!entity.owner_world.read.returned || entity.owner_world.value!=world || !Alive(token))return nullptr;
+        const auto type=s->ComponentType(s->model_type,"CharacterModelComponent");
+        const auto model=s->models->Entities().Component(token.entity,type);
+        if(!model.call.returned || !model.object || !Alive(token))return nullptr;
+        const auto art=s->models->Models().Art(static_cast<CharacterModelComponent*>(model.object));
+        return art.read.returned && Alive(token)?art.value:nullptr;
+    };
+    auto* emitter=source();
+    if(!emitter)throw std::runtime_error("audio requires this client's current owned model");
+    if(!s->sounds)s->sounds=std::make_unique<detail::SoundManager>(*s->metadata,s->bindings.references);
+    auto services=s->sounds->Services();services.current=[source,emitter]{return source()==emitter;};
+    const auto manager=s->sounds->Manager();
+    if(!manager.call.returned || !manager.object)throw std::runtime_error("audio manager unavailable");
+    const auto name=s->objects.NewStringUtf8(event.c_str());
+    if(!name.call.returned || !name.object)throw std::runtime_error("audio name allocation failed");
+    auto request=std::make_unique<OwnedSoundRequest>(std::move(services));
+    request->Start(manager.object,name.object,emitter);return request;
+}
 TextResult PresentationContext::ReadEffectTriggerPath(const EffectTriggerExecution& trigger) const {
     auto& s=*storage_->state;
     if(!s.metadata)throw std::logic_error("effect source reading requires prepared metadata");
@@ -494,6 +522,7 @@ void PresentationContext::Collect(){if(storage_->state->isolation)storage_->stat
 bool PresentationContext::Close() {
     auto& s=*storage_->state;
     bool closed=!s.effect_inputs || s.effect_inputs->Close();
+    if(s.sounds && !s.sounds->Close())closed=false;
     s.effect_control_closed=true;
     if(s.effect_control && !s.effect_control->Close())closed=false;
     if(s.effect_actions && !s.effect_actions->Close())closed=false;
