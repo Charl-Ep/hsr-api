@@ -2,7 +2,11 @@
 
 `PresentationContext::StartMovement` submits one animation-driven movement on an owned entity. It captures the current position, model and controller, validates the named base-layer state and returns an `OwnedMovementRequest`. It does not play the animation.
 
-The entity must already have an initialized native animation-movement component. The factory does not construct that component. Story-created actors currently lack it; switching their model to a battle controller does not add it.
+For Story actors, the context adds the official animation-movement component on demand. Component registration, model callbacks and updates use the game's lifecycle. The context caches the closed generic factory rather than resolving it for each actor.
+
+`AcquireMovementHost` returns an exclusive lease shared by the animation-movement and effect-follow services. The lease pauses ordinary Adventure root translation and the movement component's raw root callback. It leaves animation and IK callbacks running. `Ready` waits for previously submitted Adventure movement to drain; `waiting_for_host` reports this state on an animation request. The request samples its origin after that wait.
+
+Close the lease after detaching its motion channels and before changing the model. Closing restores the original motion policy and removes only a component created by that lease. An existing native component is retained. Entity retirement ends access to its native objects. Neither the lease nor a request destructor calls the game.
 
 Service the request on the engine thread. Cancel and drain it before a model handoff. The request also cancels at entity pre-disposal and detects unexpected model changes. Completion, interruption, replacement, cancellation and released references have separate status fields.
 

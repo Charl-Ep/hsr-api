@@ -33,6 +33,7 @@ class EffectEntityFollow;
 class OwnedTimeline;
 class OwnedSoundRequest;
 class OwnedMovementRequest;
+class OwnedMovementHost;
 struct AnimationMovePlan;
 class EffectSubmissions;
 struct EffectSubmission;
@@ -152,6 +153,10 @@ public:
     // does not play the animation. Cancel/drain before changing the model.
     std::unique_ptr<OwnedMovementRequest> StartMovement(EntityToken,GameWorld*,
         const std::string& state,AnimationMovePlan) const;
+    // Exclusive animation/effect movement on an owned actor. A host may be
+    // waiting for already-submitted Adventure motion; check Ready before use.
+    // Close after detaching all request-owned motion, before model handoff.
+    std::shared_ptr<OwnedMovementHost> AcquireMovementHost(EntityToken,GameWorld*) const;
     TextResult ReadEffectTriggerPath(const EffectTriggerExecution&) const;
     // Construct during preparation; activate and stop on the owner thread.
     // Receives only this client's entity generations, including creation-time

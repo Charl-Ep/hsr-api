@@ -1,5 +1,6 @@
 #pragma once
 #include "AnimationMovementUpdates.hpp"
+#include "OwnedMovementHost.hpp"
 #include "../../entity/EntityLifecycle.hpp"
 
 namespace hksr::sdk_v1 {
@@ -13,10 +14,13 @@ struct MovementRequestServices {
     // alive: the entity lifetime has not ended; true during BeforeDispose.
     // Both run on the owner thread and must not perform game writes.
     std::function<bool()> current,alive;
+    std::shared_ptr<OwnedMovementHost> host;
+    std::function<Position3()> origin; // sample after pending ordinary motion drains
 };
 struct MovementRequestStatus {
     bool attempted=false,accepted=false,started=false,completed=false,cancelled=false,closed=false;
     bool interrupted=false,replaced=false,owner_lost=false;
+    bool waiting_for_host=false;
     float animation_time=0,movement_time=0;
     MovementWriteResult submission,interruption;
     std::string error;

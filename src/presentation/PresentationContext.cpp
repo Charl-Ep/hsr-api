@@ -26,6 +26,7 @@
 #include "events/OwnedAnimationTaskRules.hpp"
 #include "audio/SoundManager.hpp"
 #include <hksr/presentation/movement/OwnedMovementRequest.hpp>
+#include "movement/MovementHostFactory.hpp"
 #include <hksr/presentation/events/AnimationEventConstruction.hpp>
 #include <hksr/presentation/events/AnimationSequenceExecutions.hpp>
 #include <hksr/presentation/events/AnimationEventDefinitions.hpp>
@@ -39,6 +40,7 @@
 #include <stdexcept>
 
 namespace hksr::sdk_v1 {
+namespace {bool Alive(EntityToken);}
 struct PresentationContext::State {
     ManagedObjects& objects;
     PresentationBindings bindings;
@@ -65,13 +67,13 @@ struct PresentationContext::State {
     EffectCompletionAllocation completion;
     std::unique_ptr<detail::SoundManager> sounds;
     std::optional<MovementRequestServices> movements;
+    std::unique_ptr<detail::MovementHostFactory> movement_hosts;
     std::vector<std::unique_ptr<AnimationExitConfig>> exit_inputs;
     ManagedRoots roots;
     std::vector<ManagedRootId> handles;
     void* event_type=nullptr;
     void* model_type=nullptr;
     void* style_type=nullptr;
-    void* movement_type=nullptr;
 
     State(ManagedObjects& input,PresentationBindings value)
         :objects(input),bindings(std::move(value)),resources(bindings),
@@ -94,6 +96,19 @@ struct PresentationContext::State {
     }
     void Log(const std::string& text) const noexcept {
         if(trace)try{trace(text);}catch(...){}
+    }
+    ActorAnimatorView MovementModel(EntityToken token,GameWorld* world) {
+        if(!world || effect_control_closed || !Alive(token) || TrackedEntities().IsRetiring(token) ||
+            owner.OwnedToken(token.entity).generation!=token.generation)return {};
+        const auto entity=models->Entities().Read(token.entity);
+        if(!entity.owner_world.read.returned || entity.owner_world.value!=world || !entity.loaded.read.returned || !entity.loaded.value || !Alive(token))return {};
+        const auto type=ComponentType(model_type,"CharacterModelComponent");
+        const auto model=models->Entities().Component(token.entity,type);
+        if(!model.call.returned || !model.object || !Alive(token))return {};
+        const auto view=models->Models().Read(static_cast<CharacterModelComponent*>(model.object));
+        if(!Alive(token) || !view.changing.read.returned || view.changing.value || !view.animator.read.returned || !view.animator.value)return {};
+        const auto controller=animation.Controller(view.animator.value);
+        return controller.call.returned && controller.object && Alive(token)?ActorAnimatorView{model.object,view.animator.value,controller.object}:ActorAnimatorView{};
     }
     EffectControl& EffectControls() {
         if(effect_control_closed)throw std::logic_error("presentation effect control closed");
@@ -469,25 +484,22 @@ std::unique_ptr<OwnedSoundRequest> PresentationContext::StartSound(EntityToken t
     auto request=std::make_unique<OwnedSoundRequest>(std::move(services));
     request->Start(manager.object,name.object,emitter);return request;
 }
+std::shared_ptr<OwnedMovementHost> PresentationContext::AcquireMovementHost(EntityToken token,GameWorld* world) const {
+    const auto s=storage_->state;
+    if(!s->metadata || s->effect_control_closed)throw std::logic_error("movement context unavailable");
+    const auto model=s->MovementModel(token,world);
+    if(!model.animator)throw std::runtime_error("movement requires this client's current owned model");
+    if(!s->movement_hosts)s->movement_hosts=std::make_unique<detail::MovementHostFactory>(*s->metadata,s->bindings.references,s->resources.Arrays(),s->trace);
+    const auto current=[s,token,world,model]{const auto now=s->MovementModel(token,world);
+        return now.component==model.component && now.animator==model.animator && now.controller==model.controller;};
+    return s->movement_hosts->Acquire(token,model.animator,current,[token]{return Alive(token);});
+}
 std::unique_ptr<OwnedMovementRequest> PresentationContext::StartMovement(EntityToken token,GameWorld* world,
     const std::string& state,AnimationMovePlan plan) const {
     const auto s=storage_->state;
     if(!s->metadata || s->effect_control_closed)throw std::logic_error("movement context unavailable");
     if(state.empty() || state.find('\0')!=std::string::npos)throw std::invalid_argument("movement animation state is empty or contains NUL");
-    const auto source=[s,token,world]() -> ActorAnimatorView {
-        if(!world || s->effect_control_closed || !Alive(token) || TrackedEntities().IsRetiring(token) ||
-            s->owner.OwnedToken(token.entity).generation!=token.generation)return {};
-        const auto entity=s->models->Entities().Read(token.entity);
-        if(!entity.owner_world.read.returned || entity.owner_world.value!=world || !entity.loaded.read.returned || !entity.loaded.value || !Alive(token))return {};
-        const auto type=s->ComponentType(s->model_type,"CharacterModelComponent");
-        const auto model=s->models->Entities().Component(token.entity,type);
-        if(!model.call.returned || !model.object || !Alive(token))return {};
-        const auto view=s->models->Models().Read(static_cast<CharacterModelComponent*>(model.object));
-        if(!Alive(token) || !view.changing.read.returned || view.changing.value || !view.animator.read.returned || !view.animator.value)return {};
-        const auto controller=s->animation.Controller(view.animator.value);
-        return controller.call.returned && controller.object && Alive(token)?ActorAnimatorView{model.object,view.animator.value,controller.object}:ActorAnimatorView{};
-    };
-    const auto type=s->ComponentType(s->movement_type,"BGOBCKLPEMK","");
+    const auto source=[s,token,world]{return s->MovementModel(token,world);};
     if(!s->movements) {
         MovementRequestServices value;value.data=ResolveAnimationMoveData460(*s->metadata);
         value.access=ResolveAnimationMovementAccess460(*s->metadata);value.update=ResolveAnimationMovementUpdate460(*s->metadata);
@@ -514,9 +526,6 @@ std::unique_ptr<OwnedMovementRequest> PresentationContext::StartMovement(EntityT
             const auto now=source();return now.component==model.component && now.animator==model.animator && now.controller==model.controller;
         };
         if(!current())throw std::runtime_error("movement model changed during preparation");
-        const auto component=s->models->Entities().Component(token.entity,type);
-        if(!component.call.returned || !component.object || !Alive(token))throw std::runtime_error("owned movement component unavailable");
-        keep(component.object);
         const auto name=s->objects.NewStringUtf8(state.c_str());
         if(!name.call.returned || !name.object)throw std::runtime_error("movement state name allocation failed");
         keep(name.object);
@@ -530,7 +539,12 @@ std::unique_ptr<OwnedMovementRequest> PresentationContext::StartMovement(EntityT
         plan.origin=origin.position;plan.animation_key=key.value;
         auto services=*s->movements;services.model_objects={model.component,model.animator,model.controller};
         services.current=current;services.alive=[token]{return Alive(token);};
-        auto request=std::make_unique<OwnedMovementRequest>(std::move(services),token,component.object);
+        services.host=AcquireMovementHost(token,world);
+        if(!services.host->Status().prepared)throw std::runtime_error(services.host->Status().error);
+        services.origin=[s,token]{const auto pose=s->placement.ReadEntity(token.entity);
+            if(!pose.ready)throw std::runtime_error("movement origin unavailable: "+pose.error);return pose.position;};
+        auto* component=services.host->Component();
+        auto request=std::make_unique<OwnedMovementRequest>(std::move(services),token,component);
         request->Start(plan);release();return request;
     }catch(...){release();throw;}
 }
@@ -594,11 +608,14 @@ std::unique_ptr<AnimationEventPolicy> PresentationContext::CreateAnimationPolicy
         [s](GameEntity* entity){return s->owner.Owns(entity);},s->trace,std::move(disabled),std::move(performers));
 }
 void PresentationContext::Activate(){auto& s=*storage_->state;if(s.isolation && s.isolation_status.phase!=PresentationIsolationPhase::Retired){s.isolation->ActivateOnCurrentThread();s.isolation_status.phase=PresentationIsolationPhase::Active;}}
-void PresentationContext::Collect(){if(storage_->state->isolation)storage_->state->isolation->Collect();}
+void PresentationContext::Collect(){auto& s=*storage_->state;
+    if(s.movement_hosts)s.movement_hosts->Collect();
+    if(s.isolation)s.isolation->Collect();}
 bool PresentationContext::Close() {
     auto& s=*storage_->state;
     bool closed=!s.effect_inputs || s.effect_inputs->Close();
     if(s.sounds && !s.sounds->Close())closed=false;
+    if(s.movement_hosts && !s.movement_hosts->Close())closed=false;
     s.effect_control_closed=true;
     if(s.effect_control && !s.effect_control->Close())closed=false;
     if(s.effect_actions && !s.effect_actions->Close())closed=false;
@@ -610,7 +627,7 @@ bool PresentationContext::Close() {
         if(s.roots.Release(*it).complete){s.roots.Forget(*it);it=s.handles.erase(it);}else {closed=false;++it;}
     }
     s.event_type=nullptr;
-    s.model_type=0;s.style_type=0;s.movement_type=nullptr;
+    s.model_type=0;s.style_type=0;
     if(closed && s.isolation){s.isolation->Retire();s.isolation_status.phase=PresentationIsolationPhase::Retired;}
     return closed;
 }

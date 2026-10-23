@@ -239,10 +239,11 @@ void AccessTests() {
 void RequestTests() {
     Fixture f;Blob blob;int actor=1,transform=2,animator=3;auto* component=Component(blob,actor,transform,animator);
     EntityLifecycle lifecycle;auto token=lifecycle.Track(reinterpret_cast<GameEntity*>(&actor));
-    auto make=[&]() {
+    auto make=[&](std::shared_ptr<OwnedMovementHost> host={}) {
         MovementRequestServices s;s.data=Services(f);s.access=access_layout;s.access.submit=M(Submit);s.access.clear=M(Clear);s.update=M(Evaluate);
         s.lifecycle=&lifecycle;s.current=[&]{return f.current && !lifecycle.IsRetiring(token);};
         s.alive=[&]{return lifecycle.Current(token.entity).generation==token.generation && !lifecycle.IsDisposed(token);};
+        s.host=std::move(host);
         return std::make_unique<OwnedMovementRequest>(s,token,component);
     };
     auto tick=[&](Evaluation next) {
@@ -314,6 +315,35 @@ void RequestTests() {
         Check(evaluator_calls==calls+100&&!request->Status().started,"foreign evaluator not forwarded");
         std::thread other([&]{Evaluate(component,0.5f,&out,&method_marker);});other.join();request->Service();
         Check(!request->Status().started,"wrong thread published observation");request->Cancel();request->Service();Check(request->Status().closed,"conflict fixture cleanup");
+    }
+    {
+        bool root=true,callback=true,pending=true;
+        auto host=[&] {
+            MovementHostServices s;s.references=Services(f).references;
+            s.current=[&]{return f.current && !lifecycle.IsRetiring(token);};
+            s.alive=[&]{return !lifecycle.IsDisposed(token);};
+            s.lookup=[&]{return ObjectResult{{true,0},component};};
+            s.create=[]()->ObjectResult{throw std::runtime_error("unexpected create");};
+            s.initialize=[](void*)->CallResult{throw std::runtime_error("unexpected init");};
+            s.remove=[](void*)->CallResult{throw std::runtime_error("existing component removed");};
+            s.observe=[&](void* c){return AnimationMovementAccess(access_layout,token.entity).Observe(c);};
+            s.read_root_motion=[&]{return Observed<bool>{root,{true,0}};};
+            s.write_root_motion=[&](bool v){root=v;return CallResult{true,0};};
+            s.read_pending_motion=[&]{return Observed<bool>{pending,{true,0}};};
+            s.read_callback=[&](void*){return Observed<bool>{callback,{true,0}};};
+            s.write_callback=[&](void*,bool v){callback=v;return CallResult{true,0};};
+            auto lease=std::make_shared<OwnedMovementHost>(s,token);Check(lease->Prepare(),"host fixture preparation");return lease;
+        };
+        auto request=make(host());const auto submits=f.submits;request->Start(Input());
+        Check(request->Status().waiting_for_host && f.submits==submits && !root,"request bypassed pending motion");
+        pending=false;request->Service();Check(request->Status().accepted && f.submits==submits+1,"drained host not submitted");
+        tick(Evaluation::Complete);request->Service();Check(request->Status().closed && root && callback,"completion did not restore motion");
+        pending=true;auto cancelled=make(host());cancelled->Start(Input());const auto before=f.submits;
+        cancelled->Cancel();cancelled->Service();Check(cancelled->Status().closed && f.submits==before && root && callback,"pending cancel submitted movement");
+        auto handoff=make(host());handoff->Start(Input());f.current=false;handoff->Service();f.current=true;
+        Check(handoff->Status().closed && root && callback && f.submits==before,"pending model handoff did not restore");
+        auto retired=make(host());retired->Start(Input());const auto notice=lifecycle.DisposalStarting(token);
+        Check(notice.invoked==1 && retired->Status().closed && root && callback,"pending retirement did not drain");
     }
     Check(f.roots.empty(),"request roots leaked");
 }

@@ -19,6 +19,7 @@ set(HKSR_API_SOURCES
 
     # adapters/managed
     adapters/managed/ArrayMethods.cpp
+    adapters/managed/GenericFactoryMethods.cpp
     adapters/managed/ReferenceMethods.cpp
 
     # adapters/model
@@ -94,6 +95,7 @@ set(HKSR_API_SOURCES
 
     # src/managed
     src/managed/ManagedArrays.cpp
+    src/managed/GenericFactory.cpp
     src/managed/ManagedLists.cpp
     src/managed/ManagedRoots.cpp
     src/managed/References.cpp
@@ -138,6 +140,8 @@ set(HKSR_API_SOURCES
     src/presentation/movement/AnimationMovementAccess.cpp
     src/presentation/movement/AnimationMovementUpdates.cpp
     src/presentation/movement/OwnedMovementRequest.cpp
+    src/presentation/movement/OwnedMovementHost.cpp
+    src/presentation/movement/MovementHostFactory.cpp
 
     # src/presentation/effects
     src/presentation/effects/EffectAccess.cpp

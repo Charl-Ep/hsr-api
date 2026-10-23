@@ -1,6 +1,7 @@
 #include <hksr/presentation/movement/OwnedMovementRequest.hpp>
 #include <hksr/managed/ManagedRoots.hpp>
 #include <stdexcept>
+#include <optional>
 
 namespace hksr::sdk_v1 {
 struct OwnedMovementRequest::State:std::enable_shared_from_this<State> {
@@ -9,6 +10,7 @@ struct OwnedMovementRequest::State:std::enable_shared_from_this<State> {
     std::vector<ManagedRootId> retained;std::unique_ptr<AnimationMovementUpdates> updates;
     EntityDisposalSubscription disposal=0;MovementRequestStatus status;
     bool busy=false,submitted=false,clear_attempted=false,release=false;
+    std::optional<AnimationMovePlan> pending;
     State(MovementRequestServices s,EntityToken o,void* c):services(std::move(s)),owner(o),component(c),
         data(services.data),access(services.access,o.entity),roots(services.data.references){}
     void Error(const std::string& value){if(status.error.empty())status.error=value;}
@@ -21,7 +23,11 @@ struct OwnedMovementRequest::State:std::enable_shared_from_this<State> {
         if(updates)updates->Close();
     }
     void Close() {
+        status.waiting_for_host=false;
         Disconnect();
+        if(services.host && !services.host->Close()) {
+            Error(services.host->Status().error.empty()?"movement host cleanup pending":services.host->Status().error);return;
+        }
         const bool graph=data.Close();
         for(auto it=retained.begin();it!=retained.end();) {
             if(roots.Release(*it).complete){roots.Forget(*it);it=retained.erase(it);}else ++it;
@@ -39,6 +45,27 @@ struct OwnedMovementRequest::State:std::enable_shared_from_this<State> {
         status.animation_time=value.animation_time;status.movement_time=value.movement_time;
         if(value.failed)Error("movement evaluation outcome unknown");
     }
+    void Submit() {
+        if(!pending)return;
+        if(services.host && !services.host->Ready()) {
+            status.waiting_for_host=services.host->Status().waiting;
+            if(!services.host->Status().error.empty())throw std::runtime_error(services.host->Status().error);
+            if(!status.waiting_for_host)throw std::runtime_error("movement host no longer available");
+            return;
+        }
+        status.waiting_for_host=false;
+        if(services.origin)pending->origin=services.origin();
+        if(!data.Prepare(*pending))throw std::runtime_error(data.Error());
+        pending.reset();
+        updates=std::make_unique<AnimationMovementUpdates>(services.update,services.access,owner.entity,component,data.Object());
+        status.submission=access.Submit(component,data,[this]{return !status.cancelled && services.alive() && services.current();});
+        submitted=status.submission.attempted;
+        status.accepted=status.submission.call.returned && status.submission.state==MovementWriteState::Owned;
+        ObserveUpdates();
+        status.accepted=status.accepted || (status.submission.call.returned && status.completed);
+        if(!submitted || status.submission.state==MovementWriteState::Failed)
+            Error(status.submission.error.empty()?"movement submission failed":status.submission.error);
+    }
     void Service() {
         if(status.closed || busy)return;
         busy=true;struct Guard{bool& value;~Guard(){value=false;}} guard{busy};
@@ -49,7 +76,9 @@ struct OwnedMovementRequest::State:std::enable_shared_from_this<State> {
                 status.owner_lost=true;status.cancelled=true;release=true;Close();return;
             }
             if(!services.current())status.cancelled=true;
+            if(pending && !status.cancelled && status.error.empty())Submit();
             if(!submitted) {
+                if(pending && !status.cancelled && status.error.empty())return;
                 if(status.attempted || status.cancelled){release=true;Close();}
                 return;
             }
@@ -75,7 +104,7 @@ struct OwnedMovementRequest::State:std::enable_shared_from_this<State> {
                     release=true;Close();
                 }else Error(status.interruption.error.empty()?"movement interruption outcome unknown":status.interruption.error);
             }
-        }catch(const std::exception& e){Error(e.what());}
+        }catch(const std::exception& e){Error(e.what());if(!submitted){release=true;Close();}}
     }
 };
 OwnedMovementRequest::OwnedMovementRequest(MovementRequestServices services,EntityToken owner,void* component) {
@@ -91,25 +120,13 @@ void OwnedMovementRequest::Start(const AnimationMovePlan& input) {
         if(!s.services.alive() || !s.services.current())throw std::runtime_error("movement owner/model unavailable");
         s.Keep(s.owner.entity);s.Keep(s.component);
         for(auto* object:s.services.model_objects)if(object)s.Keep(object);
-        if(!s.data.Prepare(input))throw std::runtime_error(s.data.Error());
-        s.updates=std::make_unique<AnimationMovementUpdates>(s.services.update,s.services.access,s.owner.entity,s.component,s.data.Object());
+        s.pending=input;
         std::weak_ptr<State> weak=state_;
         s.disposal=s.services.lifecycle->BeforeDispose(s.owner,[weak](auto){
             if(auto state=weak.lock()){state->status.cancelled=true;state->Service();}
         });
-        s.status.submission=s.access.Submit(s.component,s.data,[&s]{
-            return !s.status.cancelled && s.services.alive() && s.services.current();
-        });
-        s.submitted=s.status.submission.attempted;
-        s.status.accepted=s.status.submission.call.returned && s.status.submission.state==MovementWriteState::Owned;
-        s.ObserveUpdates();
-        // Very short requests may naturally finish inside Submit's zero-delta
-        // evaluation. Only the evaluator receipt can establish this outcome.
-        s.status.accepted=s.status.accepted || (s.status.submission.call.returned && s.status.completed);
-        if(!s.submitted || s.status.submission.state==MovementWriteState::Failed)
-            s.Error(s.status.submission.error.empty()?"movement submission failed":s.status.submission.error);
     }catch(const std::exception& e){s.Error(e.what());}
-    if(!s.submitted)s.release=true;
+    if(!s.status.error.empty())s.release=true;
     s.busy=false;s.Service();
 }
 void OwnedMovementRequest::Cancel(){if(!state_->status.closed)state_->status.cancelled=true;}
