@@ -2,6 +2,8 @@
 
 `PresentationContext::StartMovement` submits one animation-driven movement on an owned entity. It captures the current position, model and controller, validates the named base-layer state and returns an `OwnedMovementRequest`. It does not play the animation.
 
+The entity must already have an initialized native animation-movement component. The factory does not construct that component. Story-created actors currently lack it; switching their model to a battle controller does not add it.
+
 Service the request on the engine thread. Cancel and drain it before a model handoff. The request also cancels at entity pre-disposal and detects unexpected model changes. Completion, interruption, replacement, cancellation and released references have separate status fields.
 
 `AnimationMovementData` and `AnimationMovementAccess` are the lower-level data and component adapters.
