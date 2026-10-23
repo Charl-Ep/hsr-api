@@ -21,6 +21,7 @@
 #include <hksr/presentation/effects/EffectEntityFollow.hpp>
 #include <hksr/presentation/effects/EffectSubmissions.hpp>
 #include <hksr/presentation/audio/OwnedSoundRequest.hpp>
+#include <hksr/presentation/movement/OwnedMovementRequest.hpp>
 #include <hksr/runtime/RuntimeHost.hpp>
 
 // Compile-only ordinary consumer. It does not know the binding table or any
@@ -70,6 +71,10 @@ public:
     std::unique_ptr<hksr::api::EffectEntityFollow> EffectFollow() {return context_->CreateEffectEntityFollow();}
     std::unique_ptr<hksr::api::OwnedSoundRequest> Sound(hksr::api::EntityToken owner,hksr::api::GameWorld* world) {
         return context_->StartSound(owner,world,"event");
+    }
+    std::unique_ptr<hksr::api::OwnedMovementRequest> Movement(hksr::api::EntityToken owner,hksr::api::GameWorld* world,
+        hksr::api::AnimationMovePlan plan) {
+        return context_->StartMovement(owner,world,"Attack",std::move(plan));
     }
     hksr::api::EffectControlResult EffectProgress(hksr::api::EffectReference ref) {
         return context_->EffectServices()->SetProgress(ref,0.5f,0.1f);

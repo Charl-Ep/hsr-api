@@ -1,5 +1,6 @@
 #include <hksr/presentation/movement/AnimationMovementData.hpp>
 #include <hksr/presentation/movement/AnimationMovementAccess.hpp>
+#include <hksr/presentation/movement/AnimationMovementUpdates.hpp>
 #include <stdexcept>
 
 namespace hksr::sdk_v1 {
@@ -72,5 +73,8 @@ AnimationMovementAccessBinding ResolveAnimationMovementAccess460(RuntimeMetadata
     if(metadata.Version()!=RuntimeVersion::Hsr460)throw std::invalid_argument("animation movement access qualified for HSR 4.6");
     return ResolveAnimationMovementAccess460(metadata,metadata.ReadFields("","BGOBCKLPEMK"),
         ResolveAnimationMoveDataLayout460(metadata.ReadFields("","FGNNHFLGJBK"),metadata.ReadFields("","BCNMLILBENC"),metadata.ReadFields("","DDFDNJCFIHM")));
+}
+Method ResolveAnimationMovementUpdate460(MethodResolver& methods) {
+    return methods.Resolve("","BGOBCKLPEMK","FFLMBFFEHLC","System.Boolean",{"System.Single","RPG.MVector3&"});
 }
 }

@@ -178,6 +178,10 @@ void Test() {
     const auto map_view=scene.ReadMap(frame);const auto placement=scene.ReadPlayerPlacement(frame);
     Check(map_view.map.value==&map && map_view.identity[0].value==23 && placement.ready);
     Check(placement.position.y==2 && placement.rotation.w==1 && world_reads==2);
+    const auto placed=TrackedEntities().Track(entity);
+    Check(scene.ReadEntityPlacement(placed,world).ready);
+    Check(!scene.ReadEntityPlacement(placed,reinterpret_cast<GameWorld*>(&other_world)).ready);
+    TrackedEntities().Disposed(placed);Check(!scene.ReadEntityPlacement(placed,world).ready);TrackedEntities().Forget(placed);
     frame.disposing.value=true;
     Check(!scene.ReadMap(frame).map.read.returned && !scene.ReadPlayerPlacement(frame).ready && world_reads==2);
 }

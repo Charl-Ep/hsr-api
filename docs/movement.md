@@ -1,6 +1,10 @@
 # Animation movement
 
-`AnimationMovementData` builds a private movement graph consumed by the game's animation-driven movement component. `AnimationMovementAccess` provides scoped submission, observation and interruption. These are adapter APIs; the presentation host does not create movement requests automatically.
+`PresentationContext::StartMovement` submits one animation-driven movement on an owned entity. It captures the current position, model and controller, validates the named base-layer state and returns an `OwnedMovementRequest`. It does not play the animation.
+
+Service the request on the engine thread. Cancel and drain it before a model handoff. The request also cancels at entity pre-disposal and detects unexpected model changes. Completion, interruption, replacement, cancellation and released references have separate status fields.
+
+`AnimationMovementData` and `AnimationMovementAccess` are the lower-level data and component adapters.
 
 ## Data
 
@@ -26,3 +30,9 @@ Construct `AnimationMovementAccess` with resolved bindings and the owned entity 
 `Clock` reads the graph's animation and movement progress. `Detached` reports that the component no longer holds the graph; it does not establish natural completion. Failed native writes are not automatically retried.
 
 Keep data and component owners alive through submission and cleanup. Call `Close` only after the component no longer consumes the graph, or after its owner has ended. Destructors do not call the engine.
+
+## Completion observation
+
+`AnimationMovementUpdates` observes the official evaluator for a registered component and exact graph. A normal evaluation that returns true and clears that graph reports completion. Animation mismatch returns false and reports interruption. Detachment outside this boundary does not imply completion.
+
+The observer preserves all original arguments, output, return values and exceptions. Unregistered components and other threads are forwarded without reading their objects. Closing a watch disconnects it; the process-wide trampoline remains installed, so the SDK must not be unloaded while the game can call it.

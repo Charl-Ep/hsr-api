@@ -136,6 +136,8 @@ set(HKSR_API_SOURCES
     src/presentation/movement/AnimationMovePlan.cpp
     src/presentation/movement/AnimationMovementData.cpp
     src/presentation/movement/AnimationMovementAccess.cpp
+    src/presentation/movement/AnimationMovementUpdates.cpp
+    src/presentation/movement/OwnedMovementRequest.cpp
 
     # src/presentation/effects
     src/presentation/effects/EffectAccess.cpp

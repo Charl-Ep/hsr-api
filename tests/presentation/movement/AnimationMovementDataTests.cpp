@@ -1,5 +1,9 @@
 #include <hksr/presentation/movement/AnimationMovementData.hpp>
 #include <hksr/presentation/movement/AnimationMovementAccess.hpp>
+#include <hksr/presentation/movement/OwnedMovementRequest.hpp>
+#define NOMINMAX
+#include <Windows.h>
+#include <thread>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -28,6 +32,7 @@ struct Fixture {
     int next=0,allocations=0,retains=0,fail_retain_at=0,free_calls=0,fail_free=0;
     int ctor_calls=0,adds=0,submits=0,clears=0;
     bool retire_on_submit=false,current=true,finish_on_submit=false;
+    bool evaluate_on_submit=false,fail_clear=false;
     bool alias=false;void* first=nullptr;
     ObjectResult Allocate() {
         ++allocations;
@@ -153,17 +158,43 @@ void LayoutTests() {
 // This fixture deliberately models submission's dangerous pre-key side effect:
 // production must keep existing motion out of this call, not undo it afterward.
 const AnimationMovementAccessBinding access_layout{{},{},16,24,32,40,48,56,57,60,layout};
+enum class Evaluation { Waiting,Advance,Complete,Interrupt,Replace,Fault };
+Evaluation evaluation=Evaluation::Advance;
+void* replacement=nullptr;
+int evaluator_calls=0,method_marker=0;
+__declspec(noinline) bool __fastcall Evaluate(void* component,float delta,Position3* out,void* metadata);
 void __fastcall Submit(void* component,void* data,void*) {
     ++fixture->submits;
     Write(component,access_layout.other_motion,static_cast<void*>(nullptr));
     Write(component,access_layout.data,fixture->finish_on_submit?nullptr:data);
     if(fixture->retire_on_submit)fixture->current=false;
+    if(fixture->evaluate_on_submit){Position3 result;Evaluate(component,0,&result,&method_marker);}
 }
 void __fastcall Clear(void* component,void*) {
-    ++fixture->clears;auto* data=Read<void*>(component,access_layout.data);
+    ++fixture->clears;
+    if(fixture->fail_clear)throw std::runtime_error("failed clear");
+    auto* data=Read<void*>(component,access_layout.data);
     auto* list=Read<void*>(data,layout.segments);fixture->lists.at(list).clear();
     Write(data,layout.key,0);Write(component,access_layout.data,static_cast<void*>(nullptr));
     Write(component,access_layout.active,false);Write(component,access_layout.index,0);
+}
+__declspec(noinline) bool __fastcall Evaluate(void* component,float delta,Position3* out,void* metadata) {
+    ++evaluator_calls;Check(metadata==&method_marker,"evaluator metadata modified");
+    *out={delta,12,34};auto* data=Read<void*>(component,access_layout.data);
+    if(evaluation==Evaluation::Fault)RaiseException(0xE0670007,0,0,nullptr);
+    if(!data || evaluation==Evaluation::Waiting)return false;
+    if(evaluation==Evaluation::Replace){Write(component,access_layout.data,replacement);return true;}
+    if(evaluation==Evaluation::Interrupt){Clear(component,nullptr);return false;}
+    Write(component,access_layout.active,true);
+    Write(data,layout.previous_time,Read<float>(data,layout.previous_time)+delta);
+    Write(data,layout.progress,Read<float>(data,layout.progress)+delta*2);
+    if(evaluation==Evaluation::Complete)Clear(component,nullptr);
+    return true;
+}
+bool FaultedEvaluation(void* component) {
+    Position3 out;
+    __try{Evaluate(component,0,&out,&method_marker);return false;}
+    __except(GetExceptionCode()==0xE0670007?EXCEPTION_EXECUTE_HANDLER:EXCEPTION_CONTINUE_SEARCH){return true;}
 }
 AnimationMovementAccess Access(int& actor){auto b=access_layout;b.submit=M(Submit);b.clear=M(Clear);return {b,reinterpret_cast<GameEntity*>(&actor)};}
 void* Component(Blob& blob,int& actor,int& transform,int& animator) {
@@ -205,5 +236,86 @@ void AccessTests() {
     Check(!access.Interrupt(component,d,current).attempted&&f.clears==1,"retired component touched");
     Write(component,access_layout.data,static_cast<void*>(nullptr));Check(d.Close(),"retired roots");
 }
+void RequestTests() {
+    Fixture f;Blob blob;int actor=1,transform=2,animator=3;auto* component=Component(blob,actor,transform,animator);
+    EntityLifecycle lifecycle;auto token=lifecycle.Track(reinterpret_cast<GameEntity*>(&actor));
+    auto make=[&]() {
+        MovementRequestServices s;s.data=Services(f);s.access=access_layout;s.access.submit=M(Submit);s.access.clear=M(Clear);s.update=M(Evaluate);
+        s.lifecycle=&lifecycle;s.current=[&]{return f.current && !lifecycle.IsRetiring(token);};
+        s.alive=[&]{return lifecycle.Current(token.entity).generation==token.generation && !lifecycle.IsDisposed(token);};
+        return std::make_unique<OwnedMovementRequest>(s,token,component);
+    };
+    auto tick=[&](Evaluation next) {
+        evaluation=next;Position3 out;const bool result=Evaluate(component,0.25f,&out,&method_marker);
+        Check(out.x==0.25f&&out.y==12&&out.z==34,"hook changed output");return result;
+    };
+    {
+        auto request=make();request->Start(Input());Check(request->Status().accepted,"request not adopted");
+        Check(!tick(Evaluation::Waiting),"waiting return changed");request->Service();Check(!request->Status().started&&!request->Status().closed,"wait treated as completed");
+        Check(tick(Evaluation::Advance),"advance return changed");request->Service();
+        Check(request->Status().started&&request->Status().animation_time==0.25f&&request->Status().movement_time==0.5f,"official clock not observed");
+        Check(tick(Evaluation::Complete),"completion return changed");request->Service();
+        Check(request->Status().completed&&request->Status().closed&&!request->Status().cancelled&&request->Status().error.empty(),"natural completion missing");
+    }
+    {
+        auto request=make();request->Start(Input());tick(Evaluation::Interrupt);request->Service();
+        Check(request->Status().interrupted&&!request->Status().completed&&request->Status().closed&&!request->Status().error.empty(),"animation change fabricated completion");
+    }
+    {
+        auto request=make();request->Start(Input());tick(Evaluation::Advance);Clear(component,nullptr);request->Service();
+        Check(!request->Status().completed&&request->Status().closed&&!request->Status().error.empty(),"external clear fabricated completion");
+    }
+    {
+        auto request=make();request->Start(Input());AnimationMovementData newer(Services(f));Check(newer.Prepare(Input()),"replacement fixture");
+        replacement=newer.Object();tick(Evaluation::Replace);const auto clears=f.clears;request->Cancel();request->Service();
+        Check(request->Status().replaced&&request->Status().closed&&!request->Status().completed&&f.clears==clears,"successor cleared");
+        Write(component,access_layout.data,static_cast<void*>(nullptr));Check(newer.Close(),"successor cleanup");
+    }
+    {
+        auto request=make();request->Start(Input());const auto clears=f.clears;f.current=false;request->Service();f.current=true;
+        Check(request->Status().cancelled&&request->Status().closed&&f.clears==clears+1,"model change not scoped-cleared");
+    }
+    {
+        auto request=make();request->Start(Input());const auto clears=f.clears;
+        const auto notice=lifecycle.DisposalStarting(token);
+        Check(notice.invoked==1&&notice.failed==0&&request->Status().closed&&f.clears==clears+1,"pre-disposal did not drain");
+        lifecycle.Disposed(token);lifecycle.Forget(token);token=lifecycle.Track(reinterpret_cast<GameEntity*>(&actor));
+    }
+    {
+        auto request=make();request->Start(Input());const auto clears=f.clears;
+        lifecycle.Disposed(token);request->Service();
+        Check(request->Status().closed&&request->Status().owner_lost&&f.clears==clears,"disposed component written");
+        Write(component,access_layout.data,static_cast<void*>(nullptr));lifecycle.Forget(token);token=lifecycle.Track(reinterpret_cast<GameEntity*>(&actor));
+    }
+    {
+        f.evaluate_on_submit=true;evaluation=Evaluation::Complete;auto request=make();request->Start(Input());f.evaluate_on_submit=false;
+        Check(request->Status().accepted&&request->Status().completed&&request->Status().closed,"synchronous natural completion lost");
+    }
+    {
+        f.finish_on_submit=true;auto request=make();request->Start(Input());f.finish_on_submit=false;
+        Check(!request->Status().completed&&request->Status().closed&&!request->Status().error.empty(),"unobserved synchronous clear passed");
+    }
+    {
+        auto request=make();request->Start(Input());evaluation=Evaluation::Fault;
+        Check(FaultedEvaluation(component),"original exception swallowed");request->Service();
+        Check(!request->Status().completed&&request->Status().closed&&!request->Status().error.empty(),"fault not drained");
+    }
+    {
+        auto request=make();request->Start(Input());f.fail_clear=true;request->Cancel();request->Service();const auto clears=f.clears;
+        Check(!request->Status().closed&&!request->Status().error.empty(),"failed clear released graph");request->Service();
+        Check(f.clears==clears,"failed native clear retried");f.fail_clear=false;Clear(component,nullptr);request->Service();
+        Check(request->Status().closed,"late detachment not drained");
+    }
+    {
+        auto request=make();request->Start(Input());auto conflict=make();conflict->Start(Input());
+        Check(conflict->Status().closed&&!conflict->Status().accepted,"second request stole component");
+        Blob foreign;Component(foreign,actor,transform,animator);evaluation=Evaluation::Advance;Position3 out;
+        const auto calls=evaluator_calls;for(int i=0;i<100;++i)Check(!Evaluate(foreign.data.data(),0.5f,&out,&method_marker),"foreign result changed");
+        Check(evaluator_calls==calls+100&&!request->Status().started,"foreign evaluator not forwarded");
+        std::thread other([&]{Evaluate(component,0.5f,&out,&method_marker);});other.join();request->Service();
+        Check(!request->Status().started,"wrong thread published observation");request->Cancel();request->Service();Check(request->Status().closed,"conflict fixture cleanup");
+    }
+    Check(f.roots.empty(),"request roots leaked");
 }
-int main(){try{PlanTests();GraphTests();FailureTests();LayoutTests();AccessTests();std::cout<<"movement plan/data/access tests passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+}
+int main(){try{PlanTests();GraphTests();FailureTests();LayoutTests();AccessTests();RequestTests();std::cout<<"movement data/access/native-observation/lifetime tests passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

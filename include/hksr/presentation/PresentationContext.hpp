@@ -32,6 +32,8 @@ class PresentationEffects;
 class EffectEntityFollow;
 class OwnedTimeline;
 class OwnedSoundRequest;
+class OwnedMovementRequest;
+struct AnimationMovePlan;
 class EffectSubmissions;
 struct EffectSubmission;
 struct EffectTriggerExecution;
@@ -94,6 +96,7 @@ public:
     std::unique_ptr<ManagedRoots> CreateRoots() const;
     WorldMapSnapshot ReadMap(const WorldFrame&) const;
     PlayerPlacement ReadPlayerPlacement(const WorldFrame&) const;
+    PlayerPlacement ReadEntityPlacement(EntityToken,GameWorld*) const;
     const std::vector<std::string>& BindingErrors() const;
     // Prepared runtime only. Catalog construction and mouse observation retain
     // the same preparation-thread requirements as their explicit providers.
@@ -144,6 +147,11 @@ public:
     // cancellation and services the receipt to closure before releasing it.
     // No implicit main-listener fallback or ability/task execution.
     std::unique_ptr<OwnedSoundRequest> StartSound(EntityToken,GameWorld*,const std::string& event) const;
+    // Explicit resolved endpoints, current owned model and official layer-zero
+    // Animator state. Captures the live origin and computes the state key;
+    // does not play the animation. Cancel/drain before changing the model.
+    std::unique_ptr<OwnedMovementRequest> StartMovement(EntityToken,GameWorld*,
+        const std::string& state,AnimationMovePlan) const;
     TextResult ReadEffectTriggerPath(const EffectTriggerExecution&) const;
     // Construct during preparation; activate and stop on the owner thread.
     // Receives only this client's entity generations, including creation-time

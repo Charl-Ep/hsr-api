@@ -11,8 +11,8 @@ struct EffectEntityFollowMethods {
 struct EffectEntityFollowFields {
     std::size_t request=0,plugin_owner=0,targets=0;
 };
-struct EffectMotionTargetBinding {Method component;std::size_t owner=0,attached=0;};
-struct EffectMotionTargetObservation {EffectControlResult result;bool attached=false;};
+struct EffectMotionTargetBinding {Method component;std::size_t owner=0,attached=0,animation_motion=0,other_motion=0;};
+struct EffectMotionTargetObservation {EffectControlResult result;bool attached=false,animation_motion=false,other_motion=false;};
 struct EffectEntityFollowObservation {
     EffectControlResult result;
     // Borrowed identities, not ownership or entity-lifetime receipts.

@@ -14,7 +14,8 @@ EffectMotionTargetBinding ResolveEffectMotionTarget460(MethodResolver& metadata,
         return found->offset;
     };
     return {metadata.Resolve("RPG.GameCore","GameEntity","GetComponent","RPG.GameCore.GameComponentBase",{"System.Type"}),
-        field("_OwnerRef","RPG.GameCore.GameEntity"),field("<IsAttachMotionWithEffect>k__BackingField","System.Boolean")};
+        field("_OwnerRef","RPG.GameCore.GameEntity"),field("<IsAttachMotionWithEffect>k__BackingField","System.Boolean"),
+        field("PGALAIJOICA","FGNNHFLGJBK"),field("MIHFBGNKBJA","AKDDNBHNGON")};
 }
 EffectEntityFollowMethods ResolveEffectEntityFollow460(MethodResolver& metadata) {
     EffectEntityFollowMethods out;

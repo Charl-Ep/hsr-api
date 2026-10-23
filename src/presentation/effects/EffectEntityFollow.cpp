@@ -171,7 +171,10 @@ EffectMotionTargetObservation EffectEntityFollow::ReadTarget(void* entity) {
             unsigned char attached=0;
             if(!native::CopyMemoryChecked(&attached,static_cast<unsigned char*>(component)+s.target_binding.attached,1))
                 throw std::runtime_error("effect motion flag unreadable");
-            out.attached=attached!=0;out.result.state=EffectControlState::Applied;
+            out.attached=attached!=0;
+            out.animation_motion=s.Field(component,s.target_binding.animation_motion)!=nullptr;
+            out.other_motion=s.Field(component,s.target_binding.other_motion)!=nullptr;
+            out.result.state=EffectControlState::Applied;
         }
     }catch(const std::exception& e){out.result.detail=e.what();}
     out.result.references_released=s.Release(s.temporary);return out;

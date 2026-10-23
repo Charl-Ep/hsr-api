@@ -22,7 +22,7 @@ Effect one{nullptr,&one_plugin},two{nullptr,&two_plugin};
 Request first{10,false,&one},second{20,false,&two};
 int info,plugin_type,entity_type,target1,target2;
 int movement_type;
-struct Movement {void* owner;bool attached;};
+struct Movement {void* owner;bool attached;void* animation=nullptr;void* other=nullptr;};
 Movement movement{&target1,false};
 int serial=0,binds=0,clears=0,allocations=0;
 bool absent=false,foreign_behavior=false,fault=false,no_bind=false;
@@ -98,10 +98,14 @@ void TestEffectEntityFollow() {
     Objects objects;
     const auto target_binding=ResolveEffectMotionTarget460(metadata,{
         {"RPG.GameCore","GameComponentBase","_OwnerRef","RPG.GameCore.GameEntity",offsetof(Movement,owner),6,true},
-        {"","BGOBCKLPEMK","<IsAttachMotionWithEffect>k__BackingField","System.Boolean",offsetof(Movement,attached),1,true}});
+        {"","BGOBCKLPEMK","<IsAttachMotionWithEffect>k__BackingField","System.Boolean",offsetof(Movement,attached),1,true},
+        {"","BGOBCKLPEMK","PGALAIJOICA","FGNNHFLGJBK",offsetof(Movement,animation),1,true},
+        {"","BGOBCKLPEMK","MIHFBGNKBJA","AKDDNBHNGON",offsetof(Movement,other),1,true}});
     EffectEntityFollow follow(EffectAccess(am),methods,fields,refs,objects,ManagedArrays(ar),ManagedReferenceList(lm),target_binding);
     Check(follow.ReadTarget(&target1).result.state==EffectControlState::Applied && !follow.ReadTarget(&target1).attached);
     movement.attached=true;Check(follow.ReadTarget(&target1).attached);movement.attached=false;
+    movement.animation=&target1;Check(follow.ReadTarget(&target1).animation_motion);movement.animation=nullptr;
+    movement.other=&target1;Check(follow.ReadTarget(&target1).other_motion);movement.other=nullptr;
     Check(follow.ReadTarget(&target2).result.state==EffectControlState::Failed);
     absent=true;Check(follow.ReadTarget(&target1).result.state==EffectControlState::Unsupported);absent=false;
     const EffectReference a{10,0,&first},b{20,0,&second};
