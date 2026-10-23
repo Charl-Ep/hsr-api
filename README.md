@@ -12,6 +12,7 @@ The SDK provides runtime subscriptions, NPC and independent character creation, 
 - [Runtime callbacks](docs/runtime-host.md)
 - [Character and resource lifetimes](docs/presentation-lifecycle.md)
 - [Animation](docs/animation.md)
+- [Animation movement](docs/movement.md)
 - [Native support](docs/native-support.md)
 - [Contributing](CONTRIBUTING.md)
 
