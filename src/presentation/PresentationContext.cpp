@@ -27,6 +27,7 @@
 #include "audio/SoundManager.hpp"
 #include <hksr/presentation/movement/OwnedMovementRequest.hpp>
 #include "movement/MovementHostFactory.hpp"
+#include <hksr/presentation/projectiles/OwnedProjectileGroup.hpp>
 #include <hksr/presentation/events/AnimationEventConstruction.hpp>
 #include <hksr/presentation/events/AnimationSequenceExecutions.hpp>
 #include <hksr/presentation/events/AnimationEventDefinitions.hpp>
@@ -493,6 +494,28 @@ std::shared_ptr<OwnedMovementHost> PresentationContext::AcquireMovementHost(Enti
     const auto current=[s,token,world,model]{const auto now=s->MovementModel(token,world);
         return now.component==model.component && now.animator==model.animator && now.controller==model.controller;};
     return s->movement_hosts->Acquire(token,model.animator,current,[token]{return Alive(token);});
+}
+ProjectileLaunch PresentationContext::CaptureProjectileTarget(EntityToken token,GameWorld* world) const {
+    const auto s=storage_->state;const auto model=s->MovementModel(token,world);
+    if(!model.animator)throw std::runtime_error("projectile target requires this client's current owned model");
+    ProjectileLaunch out;out.target={token,world};out.retained_inputs={model.component,model.animator,model.controller};
+    out.target_current=[s,token,world,model] {
+        const auto now=s->MovementModel(token,world);
+        return now.component==model.component && now.animator==model.animator && now.controller==model.controller;
+    };
+    return out;
+}
+std::unique_ptr<OwnedProjectileGroup> PresentationContext::CreateProjectiles(EntityToken token,GameWorld* world,
+    std::function<void(const ProjectileArrival&)> arrival) const {
+    const auto s=storage_->state;
+    if(!s->metadata || s->effect_control_closed)throw std::logic_error("projectile context unavailable");
+    auto owner=CaptureProjectileTarget(token,world);
+    ProjectileGroupServices services;services.methods=s->metadata;services.metadata=s->metadata;services.objects=&s->objects;
+    services.fields=[s](const char* ns,const char* type){return s->metadata->ReadFields(ns,type);};
+    services.references=s->bindings.references;services.arrays=s->bindings.arrays;services.lifecycle=&TrackedEntities();
+    services.effects=EffectServices();services.owner_current=std::move(owner.target_current);
+    services.retained_inputs=std::move(owner.retained_inputs);services.arrival=std::move(arrival);services.trace=s->trace;
+    return std::make_unique<OwnedProjectileGroup>(std::move(services),EntityOrigin{token,world});
 }
 std::unique_ptr<OwnedMovementRequest> PresentationContext::StartMovement(EntityToken token,GameWorld* world,
     const std::string& state,AnimationMovePlan plan) const {

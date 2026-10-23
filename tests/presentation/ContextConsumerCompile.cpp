@@ -22,6 +22,7 @@
 #include <hksr/presentation/effects/EffectSubmissions.hpp>
 #include <hksr/presentation/audio/OwnedSoundRequest.hpp>
 #include <hksr/presentation/movement/OwnedMovementRequest.hpp>
+#include <hksr/presentation/projectiles/OwnedProjectileGroup.hpp>
 #include <hksr/runtime/RuntimeHost.hpp>
 
 // Compile-only ordinary consumer. It does not know the binding table or any
@@ -68,6 +69,9 @@ public:
         return context_->Animations()(owner);
     }
     std::shared_ptr<const hksr::api::PresentationEffects> Effects() {return context_->EffectServices();}
+    std::unique_ptr<hksr::api::OwnedProjectileGroup> Projectiles(hksr::api::EntityToken owner,hksr::api::GameWorld* world) {
+        return context_->CreateProjectiles(owner,world,[](const hksr::api::ProjectileArrival&){});
+    }
     std::unique_ptr<hksr::api::EffectEntityFollow> EffectFollow() {return context_->CreateEffectEntityFollow();}
     std::unique_ptr<hksr::api::OwnedSoundRequest> Sound(hksr::api::EntityToken owner,hksr::api::GameWorld* world) {
         return context_->StartSound(owner,world,"event");

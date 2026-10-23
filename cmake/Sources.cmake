@@ -143,6 +143,12 @@ set(HKSR_API_SOURCES
     src/presentation/movement/OwnedMovementHost.cpp
     src/presentation/movement/MovementHostFactory.cpp
 
+    # src/presentation/projectiles
+    src/presentation/projectiles/ProjectileInputs.cpp
+    src/presentation/projectiles/ProjectilePhysics.cpp
+    src/presentation/projectiles/OwnedProjectileGroup.cpp
+    src/presentation/projectiles/ProjectileWrapperCapture.cpp
+
     # src/presentation/effects
     src/presentation/effects/EffectAccess.cpp
     src/presentation/effects/EffectControl.cpp

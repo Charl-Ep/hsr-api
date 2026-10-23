@@ -34,6 +34,9 @@ class OwnedTimeline;
 class OwnedSoundRequest;
 class OwnedMovementRequest;
 class OwnedMovementHost;
+class OwnedProjectileGroup;
+struct ProjectileLaunch;
+struct ProjectileArrival;
 struct AnimationMovePlan;
 class EffectSubmissions;
 struct EffectSubmission;
@@ -157,6 +160,11 @@ public:
     // waiting for already-submitted Adventure motion; check Ready before use.
     // Close after detaching all request-owned motion, before model handoff.
     std::shared_ptr<OwnedMovementHost> AcquireMovementHost(EntityToken,GameWorld*) const;
+    // Private emission group; Prepare/Fire/Service are explicit. Close it before
+    // changing either captured model. No task or ability registration occurs.
+    std::unique_ptr<OwnedProjectileGroup> CreateProjectiles(EntityToken,GameWorld*,
+        std::function<void(const ProjectileArrival&)> arrival) const;
+    ProjectileLaunch CaptureProjectileTarget(EntityToken,GameWorld*) const;
     TextResult ReadEffectTriggerPath(const EffectTriggerExecution&) const;
     // Construct during preparation; activate and stop on the owner thread.
     // Receives only this client's entity generations, including creation-time
