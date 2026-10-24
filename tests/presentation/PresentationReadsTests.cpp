@@ -93,6 +93,11 @@ void Test() {
     Check(count.read.returned && count.value==42 && mesh_reads==1);
     Check(!context.ReadAnimator({}));Throws([&]{context.NpcMotionComponent({},world);});Check(types==0);
     token=TrackedEntities().Track(entity);
+    // A tracked official actor is not necessarily owned by this client.
+    // Facing must reject it before reading a component or issuing a write.
+    const auto before_facing=components;
+    Throws([&]{context.FaceEntity(token,world,{5,0,5});});
+    Check(components==before_facing && types==0 && roots.empty());
     auto view=context.ReadAnimator(token);
     Check(view && view->component==&model && view->animator==&animator && view->controller==&controller);
     Check(types==1 && roots.size()==1);

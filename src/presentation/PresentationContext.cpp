@@ -39,6 +39,8 @@
 #include <hksr/control/MouseMode.hpp>
 #include <hksr/animation/OfficialCatalog.hpp>
 #include <stdexcept>
+#include <cmath>
+#include <algorithm>
 
 namespace hksr::sdk_v1 {
 namespace {bool Alive(EntityToken);}
@@ -75,6 +77,7 @@ struct PresentationContext::State {
     void* event_type=nullptr;
     void* model_type=nullptr;
     void* style_type=nullptr;
+    void* transform_type=nullptr;
 
     State(ManagedObjects& input,PresentationBindings value)
         :objects(input),bindings(std::move(value)),resources(bindings),
@@ -410,6 +413,8 @@ std::optional<EffectRequestServices> PresentationContext::Effects() const {
         [s](EntityToken entity,const std::string& state,const std::vector<EffectRemovalSource>& sources){return s->ExitEvents(entity,state,sources);},
         [s](void* parameters,void* caster,void* callback,const SpatialEffectOptions& options) {
             return s->effect_inputs->ConfigureSpatial(parameters,caster,callback,options);
+        },[s](void* parameters,void* caster,void* target,void* callback,const ImpactEffectOptions& options) {
+            return s->effect_inputs->ConfigureImpact(parameters,caster,target,callback,options);
         }};
 }
 std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices() const {
@@ -593,6 +598,53 @@ PresentationContext::ControlFactory PresentationContext::Controls() const {
         return std::make_unique<ActorControlSession>(entity,world,
             ActorControlBindings{b.references,b.lifetime,b.entity,b.actor_control,b.placement,b.arrays});
     };
+}
+CallResult PresentationContext::FaceEntity(EntityToken token,GameWorld* world,Position3 target,float ratio,float offset,float duration) const {
+    const auto s=storage_->state;
+    if(!std::isfinite(target.x) || !std::isfinite(target.y) || !std::isfinite(target.z) ||
+        !std::isfinite(ratio) || !std::isfinite(offset) || !std::isfinite(duration))
+        throw std::invalid_argument("facing inputs must be finite");
+    const auto model=s->MovementModel(token,world);
+    if(!model.animator)throw std::runtime_error("facing requires this client's current owned model");
+    std::vector<ManagedRootId> temporary;
+    const auto keep=[&](void* object) {
+        temporary.reserve(temporary.size()+1);s->handles.reserve(s->handles.size()+1);
+        const auto id=s->roots.Keep(object);temporary.push_back(id);s->handles.push_back(id);
+        if(!s->roots.Status(id).ready)throw std::runtime_error("facing input retention failed");
+    };
+    const auto release=[&] {
+        for(auto id:temporary)if(s->roots.Release(id).complete) {
+            s->roots.Forget(id);
+            const auto found=std::find(s->handles.begin(),s->handles.end(),id);
+            if(found!=s->handles.end())s->handles.erase(found);
+        }
+    };
+    try {
+        keep(token.entity);keep(model.component);keep(model.animator);keep(model.controller);
+        auto* type=s->ComponentType(s->transform_type,"TransformComponent");
+        const auto transform=s->models->Entities().Component(token.entity,type);
+        if(!transform.call.returned || !transform.object)throw std::runtime_error("facing transform unavailable");
+        keep(transform.object);
+        const ActorControl control(s->bindings.actor_control);
+        const auto current=control.Yaw(transform.object);
+        const auto pose=s->placement.ReadEntity(token.entity);
+        if(!current.read.returned || !std::isfinite(current.value) || !pose.ready)
+            throw std::runtime_error("facing origin unreadable");
+        const float requested=ResolveFacingYaw(pose.position,target,current.value,ratio,offset);
+        // Allocation and native reads may reenter model replacement. Recheck
+        // ownership, world, model and component immediately before the write.
+        const auto now=s->MovementModel(token,world);
+        if(now.component!=model.component || now.animator!=model.animator || now.controller!=model.controller)
+            throw std::runtime_error("facing model changed during preparation");
+        const auto check=s->models->Entities().Component(token.entity,type);
+        const auto final_model=s->MovementModel(token,world);
+        if(final_model.component!=model.component || final_model.animator!=model.animator || final_model.controller!=model.controller ||
+            !check.call.returned || check.object!=transform.object || !Alive(token) || TrackedEntities().IsRetiring(token) ||
+            s->owner.OwnedToken(token.entity).generation!=token.generation)
+            throw std::runtime_error("facing owner changed during preparation");
+        const auto result=control.Turn(transform.object,requested,duration);
+        release();return result;
+    }catch(...){release();throw;}
 }
 std::unique_ptr<AnimationEventConstruction> PresentationContext::CreateEventConstructionObserver(
     std::function<void(const AnimationEventSource&)> before,

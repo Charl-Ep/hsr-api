@@ -2,6 +2,7 @@
 #include <hksr/control/ActorControlBindings.hpp>
 #include <hksr/presentation/PresentationBindings.hpp>
 #include <functional>
+#include <cmath>
 #include <limits>
 #include <type_traits>
 #include <hksr/entity/LifecycleHooks.hpp>
@@ -35,6 +36,11 @@ unsigned flushes=0,places=0,follows=0,stops=0,allocations=0;
 void CheckAt(bool v,int line){if(!v){std::cerr<<"character controls assertion line "<<line<<'\n';throw std::runtime_error("character controls test failed");}}
 #define Check(value) CheckAt((value),__LINE__)
 template<class F> api::Method M(F f){return {reinterpret_cast<void*>(f),&info};}
+float turn_yaw=0,turn_duration=0;unsigned turns=0;
+float __fastcall Yaw(void* target,void*){Check(target==&actor);return 350;}
+void __fastcall Turn(void* target,float yaw,float duration,bool centred,void*) {
+    Check(target==&actor && centred);++turns;turn_yaw=yaw;turn_duration=duration;
+}
 std::int32_t __fastcall Keep(void* p,int,int,void*){const int id=++next;roots[id]=p;Once(on_keep);return id;}
 void* __fastcall Target(int id,void*){return roots.at(id);}
 void __fastcall Free(int id,void*){++free_calls;if(fail_free)RaiseException(0xE0424242,0,0,nullptr);roots.erase(id);}
@@ -97,6 +103,23 @@ struct Objects:api::ManagedObjects {
 };
 }
 void TestActorControlSession() {
+    {
+        api::ActorControlMethods methods;methods.yaw=M(Yaw);methods.turn=M(Turn);
+        api::ActorControl control(methods);
+        Check(control.Yaw(&actor).read.returned && control.Yaw(&actor).value==350);
+        const auto same_yaw=[](float a,float b){return std::abs(a-b)<0.0001f;};
+        Check(same_yaw(api::ResolveFacingYaw({},{0,0,1},350,0.5f,0),355));
+        Check(same_yaw(api::ResolveFacingYaw({},{1,0,0},10,1,5),95));
+        Check(same_yaw(api::ResolveFacingYaw({},{0,0,-1},0,1,0),180));
+        Check(same_yaw(api::ResolveFacingYaw({},{0,90,0},42,1,5),47));
+        Check(same_yaw(api::ResolveFacingYaw({},{1,0,0},10,-1,5),15));
+        Check(same_yaw(api::ResolveFacingYaw({},{1,0,0},10,2,0),90));
+        Check(control.Turn(&actor,355,1).returned && turns==1 && turn_yaw==355 && turn_duration==1);
+        Check(control.Turn(&actor,90,-1).returned && turns==2 && turn_duration==-1);
+        bool rejected=false;
+        try{control.Turn(&actor,std::numeric_limits<float>::infinity(),1);}catch(const std::invalid_argument&){rejected=true;}
+        Check(rejected && turns==2 && !control.Turn(nullptr,90,1).returned);
+    }
     static_assert(!std::is_copy_constructible_v<api::ActorControlSession>);
     static_assert(!std::is_copy_assignable_v<api::ActorControlSession>);
     api::PresentationBindings b;

@@ -31,6 +31,8 @@ ActorControlMethods ResolveActorControlMethods(MethodResolver& source) {
     out.ik_active=get("RPG.Client","LookAtIK","get_IsActive","System.Boolean");
     out.behaviour_enabled=get("UnityEngine","Behaviour","get_enabled","System.Boolean");
     out.set_behaviour_enabled=get("UnityEngine","Behaviour","set_enabled","System.Void",{"System.Boolean"});
+    out.yaw=get("RPG.GameCore","TransformComponent","get_YawAngle","System.Single");
+    out.turn=get("RPG.GameCore","TransformComponent","SmoothChangeYawAngleStart","System.Void",{"System.Single","System.Single","System.Boolean"});
     return out;
 }
 }

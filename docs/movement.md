@@ -1,5 +1,11 @@
 # Animation movement
 
+## Facing
+
+`PresentationContext::FaceEntity` turns an owned actor toward an explicit world point. It uses the shortest horizontal angle, a clamped ratio and an angle offset. Positive duration uses the official Transform smoothing; nonpositive duration applies immediately. The return value reports submission, not the end of rotation. A later turn replaces the target. This operation does not move team members or change navigation policy.
+
+## Animation-driven movement
+
 `PresentationContext::StartMovement` submits one animation-driven movement on an owned entity. It captures the current position, model and controller, validates the named base-layer state and returns an `OwnedMovementRequest`. It does not play the animation.
 
 For Story actors, the context adds the official animation-movement component on demand. Component registration, model callbacks and updates use the game's lifecycle. The context caches the closed generic factory rather than resolving it for each actor.

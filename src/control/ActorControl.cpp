@@ -5,9 +5,24 @@
 #include "../platform/NativeHooks.hpp"
 #include <mutex>
 #include <cmath>
+#include <algorithm>
 #include <stdexcept>
 
 namespace hksr::sdk_v1 {
+float ResolveFacingYaw(Position3 origin,Position3 target,float current,float ratio,float offset) {
+    if(!std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
+        !std::isfinite(target.x) || !std::isfinite(target.y) || !std::isfinite(target.z) ||
+        !std::isfinite(current) || !std::isfinite(ratio) || !std::isfinite(offset))
+        throw std::invalid_argument("facing inputs must be finite");
+    const double x=double(target.x)-origin.x,z=double(target.z)-origin.z;
+    const double yaw=(x==0 && z==0)?current:std::atan2(x,z)*(180.0/3.14159265358979323846);
+    double delta=std::fmod(yaw-current,360.0);
+    if(delta<0)delta+=360;
+    if(delta>180)delta-=360;
+    const auto result=static_cast<float>(current+delta*std::clamp(ratio,0.0f,1.0f)+offset);
+    if(!std::isfinite(result))throw std::invalid_argument("facing result is out of range");
+    return result;
+}
 ActorControl::ActorControl(ActorControlMethods methods):methods_(std::make_shared<const ActorControlMethods>(std::move(methods))){}
 ActorControl::~ActorControl()=default;
 ActorControl::ActorControl(const ActorControl&) noexcept=default;
@@ -90,6 +105,11 @@ CallResult ActorControl::Automatic(void* value,bool enabled) const {return value
 CallResult ActorControl::Follow(void* value,void* target) const {return value&&target?native::CallVoid(methods_->follow,value,target,true,false,static_cast<void*>(nullptr)):CallResult{};}
 CallResult ActorControl::Stop(void* value) const {return value?native::CallVoid(methods_->stop,value,false):CallResult{};}
 CallResult ActorControl::Point(void* value,Position3 point) const {return value?native::CallVoid(methods_->point,value,&point):CallResult{};}
+Observed<float> ActorControl::Yaw(void* value) const {Observed<float> out;if(value)out.read=native::Call(methods_->yaw,&out.value,value);return out;}
+CallResult ActorControl::Turn(void* value,float yaw,float duration) const {
+    if(!std::isfinite(yaw) || !std::isfinite(duration))throw std::invalid_argument("turn values must be finite");
+    return value?native::CallVoid(methods_->turn,value,yaw,duration,true):CallResult{};
+}
 void ActorControl::BindMono(ObjectMetadata& metadata,void* mono) {
     const auto type=metadata.ReadObjectType(mono);MetadataResolver resolver({type});
     auto updated=*methods_;

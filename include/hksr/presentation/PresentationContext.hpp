@@ -9,6 +9,7 @@
 #include <vector>
 
 namespace hksr::sdk_v1 {
+struct CallResult;
 struct ManagedObjects;
 class RuntimeMetadata;
 class EntityOwner;
@@ -176,6 +177,10 @@ public:
     // their official owner frame before the context itself is closed.
     using ControlFactory=std::function<std::unique_ptr<ActorControlSession>(EntityToken,GameWorld*)>;
     ControlFactory Controls() const;
+    // Resolve only this client's owned model and submit a model-centred turn.
+    // The point is explicit; no battle target selector or team propagation runs.
+    // Native return is submission, not completion of the smoothed rotation.
+    CallResult FaceEntity(EntityToken,GameWorld*,Position3 target,float ratio=1,float angle_offset=0,float duration=-1) const;
     using PlayerResolver=std::function<GameEntity*(const WorldFrame&)>;
     PlayerResolver Player() const;
     std::unique_ptr<AnimationEventPolicy> CreateAnimationPolicy(AnimationTaskPolicy) const;
