@@ -578,6 +578,27 @@ void TestActionConfig() {
     const auto partial_ready=catalog.ReadReadyAnimationDefaults();
     Check(!partial_ready.hit_additive_layer.available && !partial_ready.hit_additive_layer.error.empty() &&
         partial_ready.hit_override_layer.available && partial_ready.default_expression.available &&
+    const auto loads_before_hit=loads;
+    auto weight_a=New(),weight_b=New();
+    Field(weight_a,"m_value","System.Single",0.23f);Field(weight_b,"m_value","System.Single",1.17f);
+    Field(visual_global,"ResilienceHitAdditiveWeights","System.Single[]",Array({weight_a,weight_b}));
+    Field(visual_global,"AvatarHitAdditiveWeightBase","System.Single",0.91f);
+    Field(visual_global,"MonsterHitAdditiveWeightBase","System.Single",0.67f);
+    Field(visual_global,"HitFrameMiniInterval","System.Int32",5);
+    const auto hit_defaults=catalog.ReadHitAnimationDefaults();
+    Check(hit_defaults.resilience_weights.available && hit_defaults.resilience_weights.value==std::vector<float>({0.23f,1.17f}) &&
+        hit_defaults.avatar_weight.available && hit_defaults.avatar_weight.value==0.91f && hit_defaults.monster_weight.value==0.67f &&
+        hit_defaults.minimum_frame_interval.available && hit_defaults.minimum_frame_interval.value==5 && loads==loads_before_hit && roots.empty());
+    // The input table's indices are semantic. One unread element cannot shift
+    // later weights or invent a default, nor erase independent scalar fields.
+    weight_b->fields.clear();const auto partial_hit=catalog.ReadHitAnimationDefaults();
+    Check(!partial_hit.resilience_weights.available && partial_hit.resilience_weights.value.empty() &&
+        !partial_hit.resilience_weights.error.empty() && partial_hit.avatar_weight.available && roots.empty());
+    Field(weight_b,"m_value","System.Single",1.17f);
+    const auto saved_global=visual_global;visual_global=nullptr;
+    const auto absent_hit=catalog.ReadHitAnimationDefaults();visual_global=saved_global;
+    Check(!absent_hit.resilience_weights.available && !absent_hit.avatar_weight.available &&
+        !absent_hit.monster_weight.available && !absent_hit.minimum_frame_interval.available && roots.empty());
         partial_ready.default_expression.value.empty() && partial_ready.transitions.size()==6 && roots.empty());
     visual_global=nullptr;const auto unavailable=catalog.ReadDefaultVisualConfig();
     Check(!unavailable.loaded && !unavailable.issues.empty() && roots.empty());

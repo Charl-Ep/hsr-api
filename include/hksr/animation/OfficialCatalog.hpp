@@ -66,6 +66,11 @@ struct ReadyAnimationDefaults {
     std::vector<ReadyTransitionInput> transitions;
 };
 // One configuration document, not an Animator state inventory or an executable
+struct HitAnimationDefaults {
+    ConfigValue<std::vector<float>> resilience_weights;
+    ConfigValue<float> avatar_weight,monster_weight;
+    ConfigValue<std::int32_t> minimum_frame_interval;
+};
 // skill graph. Every literal retains its source field. Numeric categories and
 // times are source values, not menu indices or inferred phase semantics.
 struct ActionConfigInput {
@@ -307,6 +312,9 @@ public:
     // Named original data, available without constructing a battle or its cache.
     // Prepares private shallow copies with the official per-row function. No
     // source edits, global table registration, battle construction or flags applied.
+    // Global inputs only. Phase overrides, current resilience and hit request
+    // ownership belong to the caller; no character or battle is constructed.
+    HitAnimationDefaults ReadHitAnimationDefaults();
     VisualConfigInput ReadDefaultVisualConfig();
     // The base PhaseAnimConfig only. Null means no character override, not error.
     // Selecting later phases is caller policy and is not inferred here.

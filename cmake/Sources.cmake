@@ -68,6 +68,7 @@ set(HKSR_API_SOURCES
     src/animation/catalog/ActionConfigCatalog.cpp
     src/animation/catalog/ReadyCatalog.cpp
     src/animation/catalog/AbilityCatalog.cpp
+    src/animation/catalog/HitCatalog.cpp
     src/animation/catalog/NpcCatalog.cpp
 
     # src/control
