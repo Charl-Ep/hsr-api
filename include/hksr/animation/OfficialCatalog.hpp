@@ -130,6 +130,15 @@ struct VisualReactionInput {
     ConfigValue<bool> force_hit_h;
     ConfigValue<float> hit_weight;
 };
+struct CharacterHitInput {
+    std::string source;
+    bool loaded=false;
+    ConfigValue<std::int32_t> resilience;
+    ConfigValue<float> repeat_occur_at;
+    ConfigValue<bool> phase_present;
+    VisualReactionInput phase;
+    std::vector<CatalogIssue> issues;
+};
 struct VisualBehaviorInput {
     std::int32_t source_index=0;
     bool prepared=false;
@@ -315,6 +324,8 @@ public:
     // Global inputs only. Phase overrides, current resilience and hit request
     // ownership belong to the caller; no character or battle is constructed.
     HitAnimationDefaults ReadHitAnimationDefaults();
+    VisualReactionInput ReadDefaultHitNames();
+    CharacterHitInput ReadCharacterHitInput(const std::string& character_config);
     VisualConfigInput ReadDefaultVisualConfig();
     // The base PhaseAnimConfig only. Null means no character override, not error.
     // Selecting later phases is caller policy and is not inferred here.

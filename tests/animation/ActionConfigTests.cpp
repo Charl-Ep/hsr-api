@@ -7,7 +7,8 @@
 
 namespace {
 using namespace hksr::api;
-void Check(bool yes) { if(!yes) throw std::runtime_error("action config test failed"); }
+void CheckAt(bool yes,int line) { if(!yes) throw std::runtime_error("action config test failed at line "+std::to_string(line)); }
+#define Check(...) CheckAt((__VA_ARGS__),__LINE__)
 struct Node {
     std::array<std::uint64_t,48> slots{};
     std::vector<DeclaredField> fields;
@@ -88,7 +89,12 @@ void* __fastcall CategoryName(std::uint8_t category,Node* config,void* info) {
     return found==category_overrides.end()?nullptr:Text(found->second.c_str());
 }
 void* __fastcall DefaultCategoryName(std::uint8_t category,void* info) {
-    Check(category==8 && info==&metadata);return Text(L"Official_Default_Category");
+    Check(info==&metadata);
+    if(category==1)return Text(L"Fixture_Hit");
+    if(category==2)return Text(L"Fixture_Heavy");
+    if(category==7)return Text(L"Fixture_Launch");
+    if(category==9)return Text(L"Fixture_AirHit");
+    Check(category==8);return Text(L"Official_Default_Category");
 }
 void* __fastcall DefaultReadyName(std::int32_t from,std::int32_t to,void* info) {
     Check(info==&metadata);
@@ -589,6 +595,27 @@ void TestActionConfig() {
     Check(hit_defaults.resilience_weights.available && hit_defaults.resilience_weights.value==std::vector<float>({0.23f,1.17f}) &&
         hit_defaults.avatar_weight.available && hit_defaults.avatar_weight.value==0.91f && hit_defaults.monster_weight.value==0.67f &&
         hit_defaults.minimum_frame_interval.available && hit_defaults.minimum_frame_interval.value==5 && loads==loads_before_hit && roots.empty());
+    const auto hit_names=catalog.ReadDefaultHitNames();
+    Check(hit_names.present && hit_names.hit.available && hit_names.hit.value=="Fixture_Hit" &&
+        hit_names.hit_h.value=="Fixture_Heavy" && hit_names.hit_fly.value=="Fixture_Launch" && hit_names.fly_hit.value=="Fixture_AirHit" && roots.empty());
+    auto hit_character=New();documents[L"receiver"]=hit_character;
+    Field(hit_character,"Resilience","RPG.GameCore.ResilienceEnum",std::int32_t(3));
+    Field(hit_character,"RepeatOccurAnimWhenBeHitNormalizedTime","System.Single",-1.f);
+    Field(hit_character,"PhaseAnimConfig","RPG.GameCore.CharacterPhaseAnimConfig",static_cast<void*>(nullptr));
+    const auto hit_loads=loads,hit_prepared=prepared_rows;
+    auto receiver=catalog.ReadCharacterHitInput("receiver");
+    Check(receiver.loaded && receiver.resilience.available && receiver.resilience.value==3 &&
+        receiver.repeat_occur_at.available && receiver.repeat_occur_at.value==-1 && receiver.phase_present.available &&
+        !receiver.phase_present.value && !receiver.phase.present && loads==hit_loads+1 && prepared_rows==hit_prepared && roots.empty());
+    // Independent scalar failure does not hide a usable phase/name input.
+    hit_character->fields.clear();
+    auto hit_phase=New();String(hit_phase,"Hit",L"Phase_Hit");
+    Field(hit_character,"PhaseAnimConfig","RPG.GameCore.CharacterPhaseAnimConfig",hit_phase);
+    receiver=catalog.ReadCharacterHitInput("receiver");
+    Check(receiver.loaded && !receiver.resilience.available && receiver.phase_present.available && receiver.phase_present.value &&
+        receiver.phase.present && receiver.phase.hit.available && receiver.phase.hit.value=="Phase_Hit" && roots.empty());
+    const auto missing_receiver=catalog.ReadCharacterHitInput("missing-receiver");
+    Check(!missing_receiver.loaded && !missing_receiver.issues.empty() && roots.empty());
     // The input table's indices are semantic. One unread element cannot shift
     // later weights or invent a default, nor erase independent scalar fields.
     weight_b->fields.clear();const auto partial_hit=catalog.ReadHitAnimationDefaults();

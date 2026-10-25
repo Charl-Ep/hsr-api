@@ -2,6 +2,51 @@
 #include <type_traits>
 
 namespace hksr::sdk_v1 {
+VisualReactionInput OfficialCatalog::ReadDefaultHitNames() {
+    VisualReactionInput out;out.present=true;auto& s=*state_;
+    auto read=[&](TextInput& target,std::uint8_t category) {
+        try {
+            State::Scope scope(s);
+            const auto lookup=s.methods.Resolve("",detail::catalog_bindings::animation_names,detail::catalog_bindings::default_reaction_name,
+                "System.String",{"RPG.GameCore.AnimCategory"},MethodKind::Static);
+            const auto result=s.Call(lookup,category);
+            Require(result.call.returned,"default hit name query failed");
+            target.value=result.object?s.Text(scope.Keep(result)):std::string();target.available=true;
+        }catch(const std::exception& error){target.error=error.what();}
+    };
+    // Categories consumed by the qualified OnHit entry and name resolver.
+    // Names are returned by the existing official pure lookup, not copied here.
+    read(out.hit,1);read(out.hit_h,2);read(out.hit_fly,7);read(out.fly_hit,9);
+    return out;
+}
+CharacterHitInput OfficialCatalog::ReadCharacterHitInput(const std::string& path) {
+    CharacterHitInput out;out.source=path;auto& s=*state_;State::Scope scope(s);
+    void* config=nullptr;std::vector<DeclaredField> fields;
+    try {config=s.Config("CharacterConfig",path,scope);fields=s.metadata.ReadObjectFields(config);out.loaded=true;}
+    catch(const std::exception& error){out.issues.push_back({-1,path,error.what()});return out;}
+    auto capture=[&](auto& target,const char* field,auto read) {
+        try {target.value=read();target.available=true;}
+        catch(const std::exception& error){target.error=error.what();out.issues.push_back({-1,field,error.what()});}
+    };
+    capture(out.resilience,"Resilience",[&]{return Read<std::int32_t>(config,Field(fields,"Resilience","RPG.GameCore.ResilienceEnum"));});
+    capture(out.repeat_occur_at,"RepeatOccurAnimWhenBeHitNormalizedTime",[&]{
+        return Read<float>(config,Field(fields,"RepeatOccurAnimWhenBeHitNormalizedTime","System.Single"));
+    });
+    void* phase=nullptr;
+    capture(out.phase_present,"PhaseAnimConfig",[&] {
+        phase=Read<void*>(config,Field(fields,"PhaseAnimConfig","RPG.GameCore.CharacterPhaseAnimConfig"));
+        if(phase)scope.Keep({{true,0},phase});return phase!=nullptr;
+    });
+    if(!out.phase_present.available || !phase)return out;
+    out.phase.present=true;
+    try {fields=s.metadata.ReadObjectFields(phase);}
+    catch(const std::exception& error){out.issues.push_back({-1,"phase fields",error.what()});return out;}
+    auto text=[&](TextInput& target,const char* name){capture(target,name,[&]{return s.String(phase,fields,name);});};
+    text(out.phase.hit,"Hit");text(out.phase.hit_h,"HitH");text(out.phase.hit_fly,"HitFly");text(out.phase.fly_hit,"FlyHit");
+    capture(out.phase.force_hit_h,"ForceHitH",[&]{return Read<std::uint8_t>(phase,Field(fields,"ForceHitH","System.Boolean"))!=0;});
+    capture(out.phase.hit_weight,"OverrideHitAnimWeight",[&]{return Read<float>(phase,Field(fields,"OverrideHitAnimWeight","System.Single"));});
+    return out;
+}
 HitAnimationDefaults OfficialCatalog::ReadHitAnimationDefaults() {
     HitAnimationDefaults out;auto& s=*state_;State::Scope scope(s);
     void* config=nullptr;std::vector<DeclaredField> fields;

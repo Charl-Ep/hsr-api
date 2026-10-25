@@ -34,6 +34,8 @@ Writes are recorded before invocation. Retain an override after a partial failur
 
 ## Ready entry and transitions
 
+`OfficialCatalog::ReadCharacterHitInput` reads resilience, occurrence-repeat timing and the optional base phase's hit fields without enumerating skills or abilities. `ReadDefaultHitNames` queries official reaction names; `ReadHitAnimationDefaults` reads global weight and interval values. Cache these configuration snapshots outside per-frame playback. Runtime phase and behavior selection belong to the consumer.
+
 `PrepareReadyPresentation` resets configured hit layers and the unique default-expression layer. Active hit layers are evaluated at zero delta, moved to the empty state and disabled. The expression uses a 0.2 normalized blend. Missing optional layers are reported independently. The result's `current` flag tracks entity, Animator and caller-intent identity.
 
 `FindReadyTransition` takes zero-based skill indices and ordered declaration snapshots. It converts to authored one-based keys, selects the first character match and falls back to defaults only when the complete character table has no match. A matched empty/unread state suppresses fallback. Unread keys and incomplete tables return distinct results. The returned row owns its timing and source data; the consumer checks Animator membership and selects playback.
