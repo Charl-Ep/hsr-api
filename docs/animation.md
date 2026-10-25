@@ -30,13 +30,15 @@ Component instances are borrowed and may change during a managed call. Recheck m
 
 A replacement expression on the same layer inherits the original baseline. During a transition, capture uses the next state. Official successor states are left intact.
 
+`ExpressionOverride::ReleaseTo` uses a newly resolved return state instead of the captured baseline. It verifies membership in the same layer and preserves a newer expression writer.
+
 Writes are recorded before invocation. Retain an override after a partial failure and release it explicitly. Release is terminal; uncertain restores are not repeated. Destructors perform no engine cleanup. Identity checks reject ended entity generations and replaced Animators; cleanup can still restore the same Animator while its model is changing.
 
 ## Ready entry and transitions
 
 `OfficialCatalog::ReadCharacterHitInput` reads resilience, occurrence-repeat timing and the optional base phase's hit fields without enumerating skills or abilities. `ReadDefaultHitNames` queries official reaction names; `ReadHitAnimationDefaults` reads global weight and interval values. Cache these configuration snapshots outside per-frame playback. Runtime phase and behavior selection belong to the consumer.
 
-`ReadReadyAnimationDefaults` includes the official hit-expression name. `AnimationResources::LayerName` reads and retains a current model's layer name. `AnimationComponent::Motion` locates the actor's motion component; `AnimationControl::HitMotionHeight` reads its flight/fall height, not world position. Null or failed observations remain unavailable. `EntityAccess::Type` reads the official entity kind separately from ordinary loading checks.
+`ReadReadyAnimationDefaults` includes the official hit-expression name. `AnimationResources::LayerName` reads and retains a current model's layer name. `AnimationComponent::Motion` locates the actor's motion component; `AnimationControl::HitMotionHeight` reads its flight/fall height, not world position. Null or failed observations remain unavailable. `EntityAccess::Type` and `AliveState` read the corresponding raw enums separately from ordinary loading checks.
 
 `PrepareReadyPresentation` resets configured hit layers and the unique default-expression layer. Active hit layers are evaluated at zero delta, moved to the empty state and disabled. The expression uses a 0.2 normalized blend. Missing optional layers are reported independently. The result's `current` flag tracks entity, Animator and caller-intent identity.
 

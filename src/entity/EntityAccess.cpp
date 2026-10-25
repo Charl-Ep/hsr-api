@@ -31,6 +31,9 @@ Observed<GameEntity*> EntityAccess::Lookup(EntityManager* manager, std::uint32_t
 Observed<int> EntityAccess::Type(GameEntity* entity) const {
     return entity?ReadValue<int>(methods_->entity_type,entity):Observed<int>{};
 }
+Observed<int> EntityAccess::AliveState(GameEntity* entity) const {
+    return entity?ReadValue<int>(methods_->alive_state,entity):Observed<int>{};
+}
 ObjectResult EntityAccess::Component(GameEntity* entity, void* type) const {
     ObjectResult result;
     if (entity && type) result.call = native::Call(methods_->component, &result.object, entity, type);

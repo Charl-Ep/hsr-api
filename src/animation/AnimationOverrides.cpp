@@ -113,6 +113,23 @@ AnimationOverrideResult ExpressionOverride::Release(const AnimationIntent& inten
     return Written(s.target.actions.CrossFade(s.animator,prior,s.blend,s.layer,s.baseline.normalized_time),
         "previous expression restored","expression restoration call failed");
 }
+AnimationOverrideResult ExpressionOverride::ReleaseTo(int hash,float blend,const AnimationIntent& intent) {
+    if(!std::isfinite(blend) || blend<0)throw std::invalid_argument("invalid expression return blend");
+    auto& s=*state_;Access::Call call(s);
+    if(s.released)return Skipped("expression lease already released");
+    s.released=true;
+    if(!s.written || !s.Model(s.animator,intent,true)) {
+        return Skipped("expression model changed or no owned write");
+    }
+    const auto now=s.Effective(s.animator,s.layer,intent,true);
+    if(!Matches(now,s.hash))return Skipped("expression successor retained");
+    const auto present=s.target.actions.HasState(s.animator,s.layer,hash);
+    if(!s.Model(s.animator,intent,true))return Skipped("expression model/intent changed");
+    if(!present.read.returned || !present.value)throw std::runtime_error("expression return state unavailable");
+    if(!Matches(s.Effective(s.animator,s.layer,intent,true),s.hash))return Skipped("expression successor retained");
+    return Written(s.target.actions.CrossFade(s.animator,hash,blend,s.layer,0),
+        "resolved expression restored","expression return call failed");
+}
 struct BlinkOverride::State:Access {
     int source;
     void* component=nullptr;

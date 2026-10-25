@@ -34,6 +34,9 @@ public:
     ExpressionOverride& operator=(const ExpressionOverride&)=delete;
     AnimationOverrideResult Apply(const AnimationIntent& intent);
     AnimationOverrideResult Release(const AnimationIntent& intent);
+    // Replace the owned expression with the caller's freshly resolved return
+    // state. A later writer or a different model is never overwritten.
+    AnimationOverrideResult ReleaseTo(int hash,float blend,const AnimationIntent& intent);
 private:
     struct State;
     State* state_;

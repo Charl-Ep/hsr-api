@@ -150,6 +150,27 @@ void TestAnimationOverrides() {
         Check(!expression.Release({}).attempted && fades==count,"official expression successor retained");
     }
     {
+        Fixture f;ExpressionOverride expression(f.Target(),&animator,5,0,{});expression.Apply({});
+        Check(expression.ReleaseTo(6,.2f,{}).call.returned && layers[2].next==6 && layers[2].next_time==0,
+            "return uses current resolved expression instead of captured baseline");
+        const auto count=fades;expression.Release({});Check(fades==count,"return consumes the expression lease");
+    }
+    {
+        Fixture f;ExpressionOverride expression(f.Target(),&animator,5,0,{});expression.Apply({});
+        layers[2].next=6;const auto count=fades;
+        Check(!expression.ReleaseTo(5,.2f,{}).attempted && fades==count,"resolved return preserves a newer expression writer");
+    }
+    {
+        Fixture f;ExpressionOverride expression(f.Target(),&animator,5,0,{});expression.Apply({});
+        on_has=[]{model_replaced=true;};const auto count=fades;
+        Check(!expression.ReleaseTo(6,.2f,{}).attempted && fades==count,"return rechecks model after target query");
+    }
+    {
+        Fixture f;ExpressionOverride expression(f.Target(),&animator,5,0,{});expression.Apply({});
+        on_has=[]{layers[2].next=6;};const auto count=fades;
+        Check(!expression.ReleaseTo(5,.2f,{}).attempted && fades==count,"return retains a successor written during target query");
+    }
+    {
         Fixture f;ExpressionOverride expression(f.Target(),&animator,5,0,{});
         fault_fade=true;Check(!expression.Apply({}).call.returned,"partial expression failure exposed");
         Check(expression.Release({}).call.returned && layers[2].next==100,"partial expression write recoverable");
