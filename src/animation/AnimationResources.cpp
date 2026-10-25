@@ -11,7 +11,7 @@ struct AnimationResources::State {
     EntityAccess entities;
     ManagedRoots roots;
     std::vector<ManagedRootId> persistent,temporary;
-    std::array<void*,3> types{};
+    std::array<void*,4> types{};
     unsigned calls=0;
     bool rooted=false,closing=false;
     State(EntityToken token,ReferenceMethods references,EntityAccess access)
@@ -29,7 +29,7 @@ struct AnimationResources::State {
     }
     static std::size_t Index(AnimationComponent kind) {
         const auto index=static_cast<std::size_t>(kind);
-        if(index>=3)throw std::invalid_argument("unknown animation component");
+        if(index>=4)throw std::invalid_argument("unknown animation component");
         return index;
     }
     void Keep(void* object,std::vector<ManagedRootId>& into) {
@@ -106,5 +106,16 @@ bool AnimationResources::Close() {
     State::Call call(*state_);
     state_->Release(state_->temporary);state_->Release(state_->persistent);
     return state_->temporary.empty() && state_->persistent.empty();
+}
+TextResult AnimationResources::LayerName(void* animator,int layer,const AnimationControl& actions,const ComponentConfig& text) {
+    State::Call call(*state_);state_->Owner();
+    const auto name=actions.LayerName(animator,layer);state_->Active();
+    if(!name.call.returned || !name.object)return {{false,name.call.exception},{},"Animator layer name unavailable"};
+    state_->Keep(name.object,state_->temporary);
+    auto result=text.ReadText(name.object);state_->Active();
+    if(result.utf8.empty() || result.utf8.find('\0')!=std::string::npos) {
+        result.read.returned=false;result.error="Animator layer name empty or invalid";
+    }
+    return result;
 }
 }

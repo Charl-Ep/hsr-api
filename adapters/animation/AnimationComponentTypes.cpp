@@ -7,6 +7,7 @@ ObjectResult ResolveAnimationComponentType(ManagedObjects& objects,AnimationComp
     case AnimationComponent::Model:return objects.ManagedType("RPG.GameCore","CharacterModelComponent");
     case AnimationComponent::FreeStyle:return objects.ManagedType("RPG.GameCore","FreeStyleComponent");
     case AnimationComponent::Emotion:return objects.ManagedType("","PEPNFLNCDHG");
+    case AnimationComponent::Motion:return objects.ManagedType("","BGOBCKLPEMK");
     }
     throw std::invalid_argument("unknown animation component");
 }

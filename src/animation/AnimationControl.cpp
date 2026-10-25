@@ -1,6 +1,7 @@
 #include <hksr/animation/AnimationControl.hpp>
 #include <hksr/native/Invocation.hpp>
 #include <hksr/native/MetadataReader.hpp>
+#include <cmath>
 
 namespace hksr::sdk_v1 {
 AnimationControl::AnimationControl(AnimationControlMethods methods):methods_(std::make_shared<const AnimationControlMethods>(std::move(methods))){}
@@ -10,6 +11,20 @@ AnimationControl& AnimationControl::operator=(const AnimationControl&) noexcept=
 
 ObjectResult AnimationControl::ResolveStateName(void* animator,int hash) const {
     ObjectResult out;if(animator)out.call=native::Call(methods_->resolve_hash,&out.object,animator,hash);return out;
+}
+ObjectResult AnimationControl::LayerName(void* animator,int layer) const {
+    ObjectResult out;if(animator && layer>=0)out.call=native::Call(methods_->layer_name,&out.object,animator,layer);return out;
+}
+Observed<float> AnimationControl::HitMotionHeight(void* motion) const {
+    Observed<float> out;float clock=0;
+    if(!motion || !methods_->hit_motion.clock_available ||
+        !native::CopyMemoryChecked(&clock,static_cast<const unsigned char*>(motion)+methods_->hit_motion.clock_offset,sizeof(clock)) ||
+        !std::isfinite(clock))return out;
+    out.read=native::Call(methods_->hit_motion.flight_height,&out.value,motion,clock);
+    if(!out.read.returned || !std::isfinite(out.value)){out.read.returned=false;return out;}
+    if(out.value<=0)out.read=native::Call(methods_->hit_motion.fall_height,&out.value,motion);
+    if(!std::isfinite(out.value))out.read.returned=false;
+    return out;
 }
 Observed<int> AnimationControl::ReadyTransitParameter() const {
     Observed<int> out;out.read=native::Call(methods_->ready_parameter_hash,&out.value,static_cast<std::int16_t>(2));return out;

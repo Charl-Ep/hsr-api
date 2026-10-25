@@ -571,9 +571,11 @@ void TestActionConfig() {
     Check(!alias.behaviors.rows[0].prepared && prepared_rows==count_before_alias && roots.empty());
     Field(visual_global,"SkillReadyAnimDefaultTransitDuration","System.Single",0.18f);
     helper_type=New();helper_values={{L"CKPEADONMLA",Text(L"Fixture_DefaultFace")},
+        {L"HINPIEHBBMO",Text(L"Fixture_HitFace")},
         {L"MIOIOHJKFEE",Text(L"Fixture_Empty")},{L"PIOGPCGJJAP",Text(L"Fixture_Additive")},
         {L"AIGNNOJHKPJ",Text(L"Fixture_Override")}};
     const auto ready_defaults=catalog.ReadReadyAnimationDefaults();
+    Check(ready_defaults.hit_expression.available && ready_defaults.hit_expression.value=="Fixture_HitFace");
     Check(ready_defaults.transition_in.available && ready_defaults.transition_in.value==0.18f && ready_defaults.transitions.size()==6 && roots.empty());
     Check(ready_defaults.transitions.front().from.value==1 && ready_defaults.transitions.front().to.value==2 &&
         ready_defaults.transitions.front().state.value=="Fixture_Fallback");

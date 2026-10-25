@@ -14,6 +14,7 @@ ReadyAnimationDefaults OfficialCatalog::ReadReadyAnimationDefaults() {
     // Current declarations + PID165512 values, independently read. A missing
     // layer constant does not invalidate transitions or other valid constants.
     text(detail::catalog_bindings::default_expression,out.default_expression);text(detail::catalog_bindings::empty_layer,out.empty_layer_state);
+    text(detail::catalog_bindings::hit_expression,out.hit_expression);
     text(detail::catalog_bindings::hit_additive_layer,out.hit_additive_layer);text(detail::catalog_bindings::hit_override_layer,out.hit_override_layer);
     try {
         void* config=s.GlobalVisualConfig(scope);

@@ -28,6 +28,9 @@ EntitySnapshot EntityAccess::Read(GameEntity* entity) const {
 Observed<GameEntity*> EntityAccess::Lookup(EntityManager* manager, std::uint32_t id) const {
     return manager ? ReadValue<GameEntity*>(methods_->manager_lookup, manager, id) : Observed<GameEntity*>{};
 }
+Observed<int> EntityAccess::Type(GameEntity* entity) const {
+    return entity?ReadValue<int>(methods_->entity_type,entity):Observed<int>{};
+}
 ObjectResult EntityAccess::Component(GameEntity* entity, void* type) const {
     ObjectResult result;
     if (entity && type) result.call = native::Call(methods_->component, &result.object, entity, type);

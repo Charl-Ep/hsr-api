@@ -9,6 +9,8 @@ namespace {
 using namespace hksr::api;
 int animator,style,model,loader,manager,controller,name,path,tag,info;
 int parameter;float parameter_value=0.7f;int parameter_kind=1;
+struct Motion {void* header[2]{};float clock=.75f;} motion;
+float flight_height=0,fall_height=.6f;int flight_reads=0,fall_reads=0;
 struct BlinkMask {bool active[4]{},value[4]{};} blink_mask;
 struct Emotion {void* header[2]{};BlinkMask* mask=&blink_mask;} emotion;
 unsigned played=0,npc_played=0,state_played=0,path_calls=0,object_calls=0;
@@ -21,6 +23,9 @@ bool __fastcall Has(void* object,int layer,int hash,void* meta) {
 }
 void* __fastcall Controller(void* object,void* meta) { Check(object==&animator && meta==&info); return &controller; }
 void* __fastcall Resolve(void* object,int hash,void* meta) {Check(object==&animator && hash==-731 && meta==&info);return &name;}
+void* __fastcall LayerName(void* object,int layer,void* meta){Check(object==&animator && layer==0 && meta==&info);return &name;}
+float __fastcall FlightHeight(void* object,float clock,void* meta){Check(object==&motion && clock==motion.clock && meta==&info);++flight_reads;return flight_height;}
+float __fastcall FallHeight(void* object,void* meta){Check(object==&motion && meta==&info);++fall_reads;return fall_height;}
 void __fastcall Play(void* object,int hash,int layer,float time,void* meta) {
     Check(object==&animator && hash==-731 && layer==2 && time==0.25f && meta==&info); ++played;
     if(fault) RaiseException(0xE0670001,0,0,nullptr);
@@ -78,6 +83,7 @@ void TestAnimationControl() {
     DeclaredType anim{"UnityEngine","Animator",{
         {"StringToHash","System.Int32",{"System.String"},true,M(Hash)},
         {"ResolveHash","System.String",{"System.Int32"},false,M(Resolve)},
+        {"GetLayerName","System.String",{"System.Int32"},false,M(LayerName)},
         {"HasState","System.Boolean",{"System.Int32","System.Int32"},false,M(Has)},
         {"get_runtimeAnimatorController","UnityEngine.RuntimeAnimatorController",{},false,M(Controller)},
         {"GetAnimatorStateInfo","System.Void",{"System.Int32","UnityEngine.StateInfoIndex","UnityEngine.AnimatorStateInfo&"},false,M(StateInfo)},
@@ -118,6 +124,17 @@ void TestAnimationControl() {
     Check(calls.HasState(&animator,2,-731).value && !calls.HasState(&animator,2,1).value);
     Check(calls.Controller(&animator).object==&controller);
     Check(calls.ResolveStateName(&animator,-731).object==&name && !calls.ResolveStateName(nullptr,-731).call.returned);
+    Check(calls.LayerName(&animator,0).object==&name && !calls.LayerName(&animator,-1).call.returned);
+    MetadataResolver motion_declarations({{"","BGOBCKLPEMK",{
+        {"HELJCOPGIMD","System.Single",{"System.Single"},false,M(FlightHeight)},
+        {"HKGEJFOLDAN","System.Single",{},false,M(FallHeight)}}}});
+    std::vector<DeclaredField> motion_fields{{"","BGOBCKLPEMK","MFIFHCICOGN","System.Single",offsetof(Motion,clock),0,true}};
+    auto mm=methods;ResolveHitMotionReads(mm,motion_declarations,motion_fields);AnimationControl movement(mm);
+    Check(mm.binding_errors.empty() && movement.HitMotionHeight(&motion).value==.6f && flight_reads==1 && fall_reads==1);
+    flight_height=.2f;Check(movement.HitMotionHeight(&motion).value==.2f && fall_reads==1);
+    Check(!movement.HitMotionHeight(nullptr).read.returned);
+    motion_fields.front().flags=0x10;ResolveHitMotionReads(mm,motion_declarations,motion_fields);
+    Check(!AnimationControl(mm).HitMotionHeight(&motion).read.returned);
     Check(calls.ReadyTransitParameter().value==712 && calls.HasFloatParameter(&animator,712).value);
     Check(!calls.HasFloatParameter(&animator,713).value && calls.HasFloatParameter(&animator,713).read.returned);
     parameter_kind=3;Check(!calls.HasFloatParameter(&animator,712).value);parameter_kind=1;

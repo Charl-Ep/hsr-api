@@ -12,6 +12,11 @@ struct BlinkControlMethods {
     bool mask_available=false;
 };
 struct BlinkSourceObservation {Observed<bool> active,enabled;};
+struct HitMotionReadMethods {
+    Method flight_height,fall_height;
+    std::size_t clock_offset=0;
+    bool clock_available=false;
+};
 struct AnimationControlMethods {
     Method hash,has_state,play,npc_motion,free_style_state,controller;
     Method replace_path,replace_object,override_manager;
@@ -22,6 +27,8 @@ struct AnimationControlMethods {
     BlinkControlMethods blink;
     Method ready_parameter_hash,float_get,float_set,parameter_count,parameter_at,parameter_hash,parameter_type;
     Method resolve_hash;
+    Method layer_name;
+    HitMotionReadMethods hit_motion;
 };
 struct AnimatorStateObservation { CallResult read; int short_name_hash=0; float normalized_time=0; int full_path_hash=0; bool loop=false; };
 // Thin official calls. The caller owns the current entity/model epoch and all
@@ -53,6 +60,10 @@ public:
     HKSR_API Observed<bool> InTransition(void* animator,int layer=0) const;
     HKSR_API Observed<int> LayerCount(void* animator) const;
     HKSR_API Observed<int> LayerIndex(void* animator,void* rooted_name) const;
+    HKSR_API ObjectResult LayerName(void* animator,int layer) const;
+    // BGOB's current flight/fall height, not world Y. Null/unread components
+    // return an unavailable observation; the owner decides absent-component policy.
+    HKSR_API Observed<float> HitMotionHeight(void* motion) const;
     HKSR_API Observed<float> LayerWeight(void* animator,int layer) const;
     HKSR_API CallResult SetLayerWeight(void* animator,int layer,float weight) const;
     // Explicit evaluation can dispatch events even at zero delta. Caller must
@@ -71,6 +82,7 @@ private:
     std::shared_ptr<const AnimationControlMethods> methods_;
 };
 HKSR_API AnimationControlMethods ResolveAnimationControlMethods(MethodResolver& resolver);
+HKSR_API void ResolveHitMotionReads(AnimationControlMethods&,MethodResolver&,const std::vector<DeclaredField>&);
 HKSR_API void ResolveBlinkControl(AnimationControlMethods& methods,MethodResolver& resolver,
     const std::vector<DeclaredField>& emotion_fields);
 // Current declarations, not retained numeric offsets. Resolve each owner type

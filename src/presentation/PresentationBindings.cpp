@@ -33,6 +33,7 @@ PresentationBindings ResolvePresentationDeclarations(MethodResolver& metadata,co
     bind("model profile",out.profile,[&]{return ResolveModelMethods(metadata);});
     out.animation=ResolveAnimationControlMethods(metadata);
     ResolveBlinkControl(out.animation,metadata,fields("","PEPNFLNCDHG"));
+    ResolveHitMotionReads(out.animation,metadata,fields("","BGOBCKLPEMK"));
     out.model_loader=ResolveModelControllerLoader(model_fields);
     out.loader_model=ResolveControllerLoaderModel(loader_fields);
     out.loader_manager=ResolveControllerLoaderManager(loader_fields);

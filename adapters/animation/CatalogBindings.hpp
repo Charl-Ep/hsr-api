@@ -10,6 +10,7 @@ inline constexpr auto reaction_name="ECACKGEBFGC";
 inline constexpr auto default_reaction_name="PJKNFGDJCAK";
 inline constexpr auto ready_transition="AODEJIKGNFJ";
 inline constexpr auto default_expression="CKPEADONMLA";
+inline constexpr auto hit_expression="HINPIEHBBMO";
 inline constexpr auto empty_layer="MIOIOHJKFEE";
 inline constexpr auto hit_additive_layer="PIOGPCGJJAP";
 inline constexpr auto hit_override_layer="AIGNNOJHKPJ";

@@ -65,6 +65,7 @@ AnimationControlMethods ResolveAnimationControlMethods(MethodResolver& resolver)
     out.in_transition=get("UnityEngine","Animator","IsInTransition","System.Boolean",{"System.Int32"});
     out.layer_count=get("UnityEngine","Animator","get_layerCount","System.Int32",{});
     out.layer_index=get("UnityEngine","Animator","GetLayerIndex","System.Int32",{"System.String"});
+    out.layer_name=get("UnityEngine","Animator","GetLayerName","System.String",{"System.Int32"});
     out.layer_weight=get("UnityEngine","Animator","GetLayerWeight","System.Single",{"System.Int32"});
     out.set_layer_weight=get("UnityEngine","Animator","SetLayerWeight","System.Void",{"System.Int32","System.Single"});
     out.update=get("UnityEngine","Animator","Update","System.Void",{"System.Single"});
@@ -77,6 +78,19 @@ AnimationControlMethods ResolveAnimationControlMethods(MethodResolver& resolver)
     out.parameter_hash=get("UnityEngine","AnimatorControllerParameter","get_nameHash","System.Int32",{});
     out.parameter_type=get("UnityEngine","AnimatorControllerParameter","get_type","UnityEngine.AnimatorControllerParameterType",{});
     return out;
+}
+void ResolveHitMotionReads(AnimationControlMethods& out,MethodResolver& resolver,const std::vector<DeclaredField>& fields) {
+    try {out.hit_motion.flight_height=resolver.Resolve("","BGOBCKLPEMK","HELJCOPGIMD","System.Single",{"System.Single"});}
+    catch(const std::exception& e){out.binding_errors.push_back(std::string("hit flight height: ")+e.what());}
+    try {out.hit_motion.fall_height=resolver.Resolve("","BGOBCKLPEMK","HKGEJFOLDAN","System.Single",{});}
+    catch(const std::exception& e){out.binding_errors.push_back(std::string("hit fall height: ")+e.what());}
+    unsigned count=0;
+    for(const auto& field:fields)if(field.owner_name=="BGOBCKLPEMK" && field.name=="MFIFHCICOGN" &&
+        field.type=="System.Single" && field.flags_observed && !(field.flags&0x10)) {
+        ++count;out.hit_motion.clock_offset=field.offset;
+    }
+    out.hit_motion.clock_available=count==1;
+    if(!out.hit_motion.clock_available)out.binding_errors.push_back("hit motion clock field unavailable/ambiguous");
 }
 void ResolveBlinkControl(AnimationControlMethods& out,MethodResolver& resolver,const std::vector<DeclaredField>& fields) {
     auto get=[&](const char* type,const char* name,const char* result,std::initializer_list<const char*> args) {

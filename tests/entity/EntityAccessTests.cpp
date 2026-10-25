@@ -44,7 +44,11 @@ void TestEntityAccess() {
     Check(!snapshot.root.read.returned && snapshot.art.value == &art);
     MetadataResolver empty({});
     const auto absent = ResolveEntityAccessMethods(empty);
-    Check(absent.binding_errors.size() == 7);
+    Check(absent.binding_errors.size() == 8);
+    MetadataResolver entity_types({{"RPG.GameCore","GameEntity",{{"get_EntityType","RPG.GameCore.EntityType",{},false,M(LoadState)}}}});
+    const auto typed=ResolveEntityAccessMethods(entity_types);
+    Check(EntityAccess(typed).Type(reinterpret_cast<GameEntity*>(&model)).value==5);
+    Check(!EntityAccess(typed).Type(nullptr).read.returned);
     const auto retirement = EntityAccess(absent).RequestRetirement(reinterpret_cast<GameWorld*>(1), reinterpret_cast<GameEntity*>(2));
     Check(!retirement.request_attempted && !retirement.set_immediate.returned);
     std::cout << "Entity/model boundary tests passed: independent results and distinct root/Art/Animator.\n";

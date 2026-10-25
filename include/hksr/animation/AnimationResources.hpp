@@ -5,7 +5,7 @@
 #include "../unity/ComponentConfig.hpp"
 
 namespace hksr::sdk_v1 {
-enum class AnimationComponent { Model, FreeStyle, Emotion };
+enum class AnimationComponent { Model, FreeStyle, Emotion, Motion };
 // Per-entity animation input ownership, not playback or a preview policy.
 // All operations run on the owner's official thread/frame. Component results
 // are borrowed current components: callers must recheck model/intent after a
@@ -26,6 +26,7 @@ public:
     // Resolves exactly one current state identity and checks the game's own
     // round trip. Result is a value; temporary managed roots drain normally.
     TextResult StateName(void* animator,int hash,const AnimationControl&,const ComponentConfig&);
+    TextResult LayerName(void* animator,int layer,const AnimationControl&,const ComponentConfig&);
     void Drain();
     bool Close();
 private:

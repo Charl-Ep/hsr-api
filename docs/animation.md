@@ -36,6 +36,8 @@ Writes are recorded before invocation. Retain an override after a partial failur
 
 `OfficialCatalog::ReadCharacterHitInput` reads resilience, occurrence-repeat timing and the optional base phase's hit fields without enumerating skills or abilities. `ReadDefaultHitNames` queries official reaction names; `ReadHitAnimationDefaults` reads global weight and interval values. Cache these configuration snapshots outside per-frame playback. Runtime phase and behavior selection belong to the consumer.
 
+`ReadReadyAnimationDefaults` includes the official hit-expression name. `AnimationResources::LayerName` reads and retains a current model's layer name. `AnimationComponent::Motion` locates the actor's motion component; `AnimationControl::HitMotionHeight` reads its flight/fall height, not world position. Null or failed observations remain unavailable. `EntityAccess::Type` reads the official entity kind separately from ordinary loading checks.
+
 `PrepareReadyPresentation` resets configured hit layers and the unique default-expression layer. Active hit layers are evaluated at zero delta, moved to the empty state and disabled. The expression uses a 0.2 normalized blend. Missing optional layers are reported independently. The result's `current` flag tracks entity, Animator and caller-intent identity.
 
 `FindReadyTransition` takes zero-based skill indices and ordered declaration snapshots. It converts to authored one-based keys, selects the first character match and falls back to defaults only when the complete character table has no match. A matched empty/unread state suppresses fallback. Unread keys and incomplete tables return distinct results. The returned row owns its timing and source data; the consumer checks Animator membership and selects playback.

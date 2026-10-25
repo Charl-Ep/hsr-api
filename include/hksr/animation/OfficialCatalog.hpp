@@ -64,6 +64,7 @@ struct ReadyAnimationDefaults {
     TextInput default_expression,empty_layer_state,hit_additive_layer,hit_override_layer;
     // Official fallback domain qualified for this adapter, not a skill-count cap.
     std::vector<ReadyTransitionInput> transitions;
+    TextInput hit_expression;
 };
 // One configuration document, not an Animator state inventory or an executable
 struct HitAnimationDefaults {

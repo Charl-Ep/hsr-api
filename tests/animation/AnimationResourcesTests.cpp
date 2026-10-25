@@ -22,6 +22,7 @@ void Once(std::function<void()>& callback){auto fn=std::move(callback);callback=
 template<class F>Method M(F fn){return {reinterpret_cast<void*>(fn),&info};}
 void* __fastcall ResolveName(void*,int hash,void*){Check(hash==137,"requested state identity");return missing_name?nullptr:&resolved_name;}
 int __fastcall NameHash(void* text,void*){Check(text==&resolved_name,"hash uses returned name");return resolved_hash;}
+void* __fastcall LayerName(void* object,int layer,void*){Check(object==&replacement && layer==0,"owned layer identity");return missing_name?nullptr:&resolved_name;}
 int __fastcall TextLength(std::u16string* text,void*){return static_cast<int>(text->size());}
 std::uint16_t __fastcall TextCharacter(std::u16string* text,int index,void*){return text->at(index);}
 int __fastcall Keep(void* value,int,int,void*){const auto id=++next;roots[id]=value;Once(on_keep);return id;}
@@ -61,12 +62,14 @@ void TestAnimationResources() {
     EntityAccessMethods methods;methods.component=M(Component);EntityAccess entities(methods);
     Objects objects;auto token=TrackedEntities().Track(owner);
     {
-        AnimationControlMethods am;am.resolve_hash=M(ResolveName);am.hash=M(NameHash);
+        AnimationControlMethods am;am.resolve_hash=M(ResolveName);am.hash=M(NameHash);am.layer_name=M(LayerName);
         ComponentConfigMethods cm;cm.string_length=M(TextLength);cm.string_character=M(TextCharacter);
         AnimationResources names(token,refs,entities);AnimationControl actions(am);ComponentConfig text(cm);
         const auto value=names.StateName(&replacement,137,actions,text);
         Check(value.read.returned && value.utf8=="Base.阶段待机" && roots.size()==2,"resolved Unicode name owns temporary root");
         names.Drain();Check(roots.size()==1,"resolved name drained without owner");
+        Check(names.LayerName(&replacement,0,actions,text).utf8=="Base.阶段待机" && roots.size()==2,"layer name retained across text reads");
+        names.Drain();
         resolved_hash=138;Check(!names.StateName(&replacement,137,actions,text).read.returned,"mismatched name not persisted");resolved_hash=137;
         missing_name=true;Check(!names.StateName(&replacement,137,actions,text).read.returned,"null name is unavailable");missing_name=false;
         Check(names.Close() && roots.empty(),"resolved and rejected names release");

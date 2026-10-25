@@ -105,6 +105,7 @@ MetadataResolver Resolver() {
             {"get_RuntimeID", "System.UInt32", {}, false, M(Id)},
             {"get_OwnerWorldRef", "RPG.GameCore.GameWorld", {}, false, M(Owner)},
             {"get_IsLoaded", "System.Boolean", {}, false, M(Loaded)},
+            {"get_EntityType", "RPG.GameCore.EntityType", {}, false, M(Id)},
             {"GetComponent", "RPG.GameCore.GameComponentBase", {"System.Type"}, false, M(Component)},
             {"set_KillImmediately", "System.Void", {"System.Boolean"}, false, M(Immediate)}}},
         {"RPG.GameCore", "GameWorld", {

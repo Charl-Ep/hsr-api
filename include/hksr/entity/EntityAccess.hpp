@@ -10,6 +10,7 @@ struct EntityAccessMethods {
     Method runtime_id, owner_world, loaded, component;
     Method manager_lookup, kill_immediately, make_die;
     std::vector<std::string> binding_errors;
+    Method entity_type;
 };
 struct EntitySnapshot {
     Observed<std::uint32_t> runtime_id;
@@ -29,6 +30,7 @@ public:
     HKSR_API EntityAccess(const EntityAccess&) noexcept;
     HKSR_API EntityAccess& operator=(const EntityAccess&) noexcept;
     HKSR_API EntitySnapshot Read(GameEntity* entity) const;
+    HKSR_API Observed<int> Type(GameEntity* entity) const;
     HKSR_API Observed<GameEntity*> Lookup(EntityManager* manager, std::uint32_t id) const;
     HKSR_API ObjectResult Component(GameEntity* entity, void* managed_type) const;
     HKSR_API RetirementResult RequestRetirement(GameWorld* world, GameEntity* entity) const;
