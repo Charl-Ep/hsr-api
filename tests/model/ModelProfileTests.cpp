@@ -91,6 +91,7 @@ void TestArtAdmission();
 void TestAnimationEvents();
 void TestAnimationExitConfig();
 void TestAnimationControl();
+void TestHitDirection();
 void TestOfficialCatalog();
 void TestActionConfig();
 void TestWorldMap();
@@ -173,6 +174,7 @@ void RunTests(int argc, char** argv){
     TestAnimationEvents();
     TestAnimationExitConfig();
     TestAnimationControl();
+    TestHitDirection();
     TestOfficialCatalog();
     MissingResolver failures;bool group_failed=false;
     try{ResolveModelMethods(failures);}catch(const std::exception& error){

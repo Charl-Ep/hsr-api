@@ -57,6 +57,7 @@ set(HKSR_API_SOURCES
     src/animation/ActionRelations.cpp
     src/animation/AdventureConfig.cpp
     src/animation/AnimationControl.cpp
+    src/animation/HitDirection.cpp
     src/animation/AnimationOverrides.cpp
     src/animation/AnimationResources.cpp
     src/animation/AnimatorCatalog.cpp
@@ -238,6 +239,7 @@ set(HKSR_API_TEST_SOURCES
     tests/animation/ActionConfigTests.cpp
     tests/animation/ActionRelationsTests.cpp
     tests/animation/AnimationControlTests.cpp
+    tests/animation/HitDirectionTests.cpp
     tests/animation/AnimationOverridesTests.cpp
     tests/animation/AnimationResourcesTests.cpp
     tests/animation/AnimatorCatalogTests.cpp
