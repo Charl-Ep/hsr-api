@@ -178,6 +178,14 @@ The `SetAnimatorState(reference, std::string, duration, restart)` overload resol
 
 See [animation inputs](animation.md) and the [C++ ownership contract](cpp-interface.md).
 
+### Damage-hit effects
+
+`OwnedEffectRequest::StartHit(caster, target, path, placement)` creates an entity-relative hit effect. `HitEffectPlacement` carries its local offset, world alignment direction, delay and prefab-attachment policy. The load callback applies the official hit-alignment operation to that request. `UpdateHit(placement)` refreshes a loaded request's attachment, replays its behavior and reapplies alignment; pending loads return `NotLoaded`.
+
+`ActorAnimationSession::ReadHitEffectPlacement` derives these spatial inputs from the receiver's current shape, attachment and transform. Offset overrides and optional world-scale adjustment are explicit inputs. Resource selection, modifier precedence and duplicate-request selection belong to the caller. Cancellation and servicing use the same `OwnedEffectRequest` lifetime as other effects.
+
+`PresentationEffects::ReadHitRules` reads the current public effect configuration. `HitMutex` calls the official read-only global/entity checks and returns a replay candidate only if it matches a supplied owned receipt. `OwnedEffectRequest::ReplayHit` revives and replays that receipt; it does not refresh its placement. `MatchesHitPath` compares the loaded effect's name with the current caster-mapped path. No query adopts an official effect or transfers cleanup ownership.
+
 ## Entity motion driven by effects
 
 `context.CreateEffectEntityFollow()` creates an engine-thread adapter for `MonoEffectPluginEntityFollowEffect`. `Read(reference)` reports its current target identities. `Set(reference, expected_targets, desired_targets)` changes the binding only when the observed list matches the expected list. An empty desired list invokes the official unbind operation; an unchanged list performs no write or allocation.

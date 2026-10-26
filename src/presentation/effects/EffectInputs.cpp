@@ -15,7 +15,7 @@ struct EffectInputs::State {
     std::map<std::string,Field> fields;
     std::map<std::string,DeclaredField> entity_fields;
     Method attach;
-    void* resident_flags=nullptr;
+    std::map<int,void*> flag_arrays;
     bool spatial_prepared=false;
     bool closed=false;
     State(MethodResolver& m,ObjectMetadata& d,ManagedObjects& o,ReferenceMethods r):methods(m),metadata(d),objects(o),roots(r){}
@@ -97,22 +97,22 @@ struct EffectInputs::State {
         if(!id)return;
         if(roots.Release(id).complete){roots.Forget(id);retained.erase(std::remove(retained.begin(),retained.end(),id),retained.end());}
     }
-    void* ResidentFlags() {
-        if(resident_flags)return resident_flags;
+    void* FlagArray(int flag) {
+        if(const auto it=flag_arrays.find(flag);it!=flag_arrays.end())return it->second;
         auto* type=Keep(objects.ManagedType("RPG.GameCore","MonoEffectFlag"));
         const auto type_root=retained.back();
         ManagedRootId value_root=0,array_root=0;
         try {
             const auto box=methods.Resolve("System","Enum","ToObject","System.Object",{"System.Type","System.Int32"},MethodKind::Static);
-            ObjectResult boxed;boxed.call=native::Call(box,&boxed.object,type,std::int32_t{1});
+            ObjectResult boxed;boxed.call=native::Call(box,&boxed.object,type,std::int32_t{flag});
             auto* value=Keep(boxed);value_root=retained.back();
             ManagedArrays arrays(ResolveArrayMethods(methods));
             auto* array=Keep(arrays.Create(type,1));array_root=retained.back();
             if(!arrays.Set(array,value,0).returned)throw std::runtime_error("effect resident array initialization failed");
             // Config tasks also share immutable Flags arrays with requests.
-            resident_flags=array;
+            flag_arrays.emplace(flag,array);
         }catch(...){ReleaseValue(array_root);ReleaseValue(value_root);ReleaseValue(type_root);throw;}
-        ReleaseValue(value_root);ReleaseValue(type_root);return resident_flags;
+        ReleaseValue(value_root);ReleaseValue(type_root);return flag_arrays.at(flag);
     }
 };
 EffectInputs::EffectInputs(MethodResolver& m,ObjectMetadata& d,ManagedObjects& o,ReferenceMethods r):state_(new State(m,d,o,r)){}
@@ -138,6 +138,17 @@ EffectInputResult EffectInputs::ConfigureEntity(void* parameters,void* caster,vo
     const auto captured=options;
     return ConfigureImpl(parameters,caster,target,completion,captured,nullptr);
 }
+EffectInputResult EffectInputs::ConfigureHitReferences(void* parameters,void* caster,void* target,void* completion) {
+    auto& s=*state_;EffectInputResult out;
+    if(s.closed || !parameters || !caster || !target || !completion)return out;
+    const auto caster_field=s.Get("TriggerEffectParams","CasterEntity",false);
+    const auto target_field=s.Get("TriggerEffectParams","TargetEntity",false);
+    const auto callback_field=s.Get("TriggerEffectParams","CompleteCallback",false);
+    out.target=s.Set(caster_field,parameters,caster);
+    if(out.target.returned)out.target=s.Set(target_field,parameters,target);
+    if(out.target.returned)out.completion=s.Set(callback_field,parameters,completion);
+    return out;
+}
 EffectInputResult EffectInputs::ConfigureSpatial(void* parameters,void* caster,void* completion,const SpatialEffectOptions& input) {
     auto spatial=input;
     const auto& r=spatial.rotation;
@@ -150,6 +161,42 @@ EffectInputResult EffectInputs::ConfigureSpatial(void* parameters,void* caster,v
     options.fade_in=spatial.fade_in;options.simulate_immediately=spatial.simulate_immediately;
     options.resident=spatial.resident;
     return ConfigureImpl(parameters,caster,nullptr,completion,options,&spatial);
+}
+EffectInputResult EffectInputs::ConfigureImpact(void* parameters,void* caster,void* target,void* completion,const ImpactEffectOptions& options) {
+    auto& s=*state_;EffectInputResult out;
+    if(s.closed || !parameters || !caster || !target || !completion)return out;
+    const auto finite=[](Position3 p){return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z);};
+    if(!finite(options.position) || !finite(options.direction))throw std::invalid_argument("invalid impact pose");
+    s.PrepareSpatial(parameters);
+    Rotation4 rotation{};
+    if(options.align) {
+        auto forward=options.direction;Position3 up{0,1,0};
+        const auto method=s.methods.Resolve("UnityEngine","Quaternion","LookRotation_Injected","System.Void",
+            {"UnityEngine.Vector3&","UnityEngine.Vector3&","UnityEngine.Quaternion&"},MethodKind::Static);
+        if(!native::CallVoid(method,&forward,&up,&rotation).returned)throw std::runtime_error("impact orientation unavailable");
+    }
+    const auto caster_field=s.Get("TriggerEffectParams","CasterEntity",false);
+    const auto param_field=s.Get("TriggerEffectParams","ParamEntity",false);
+    const auto target_field=s.Get("TriggerEffectParams","TargetEntity",false);
+    const auto callback_field=s.Get("TriggerEffectParams","CompleteCallback",false);
+    const auto flags_field=s.Get("TriggerEffectParams","Flags",false);
+    auto* flags=s.FlagArray(6); // ordinary projectile hit helper adds MonoEffectFlag 6
+    out.target=s.Set(caster_field,parameters,caster);
+    if(out.target.returned)out.target=s.Set(param_field,parameters,target);
+    if(out.target.returned)out.target=s.Set(target_field,parameters,options.attach?target:nullptr);
+    if(out.target.returned)out.target=s.Set(flags_field,parameters,flags);
+    if(out.target.returned) {
+        struct NullableVector {Position3 value;std::uint8_t present;std::uint8_t padding[3]{};};
+        struct NullableRotation {Rotation4 value;std::uint8_t present;std::uint8_t padding[3]{};};
+        static_assert(sizeof(NullableVector)==16 && sizeof(NullableRotation)==20);
+        // Same normal-hit inputs: no inferred attach point or position offset,
+        // and no generic entity-relative/reset flags layered on top of them.
+        s.Scalar(parameters,"InitPosition",NullableVector{options.position,1});
+        s.Scalar(parameters,"InitRotation",NullableRotation{rotation,1});
+        s.Scalar(parameters,"ParamEntityUsage",std::int32_t{5});
+        out.completion=s.Set(callback_field,parameters,completion);
+    }
+    return out;
 }
 EffectInputResult EffectInputs::ConfigureImpl(void* parameters,void* caster,void* target,void* completion,
     const EntityEffectOptions& options,const SpatialEffectOptions* spatial) {
@@ -166,7 +213,7 @@ EffectInputResult EffectInputs::ConfigureImpl(void* parameters,void* caster,void
     const auto callback_field=s.Get("TriggerEffectParams","CompleteCallback",false);
     const auto attach_field=s.Get("TriggerEffectParams","DynamicAttach",false);
     const auto flags_field=s.Get("TriggerEffectParams","Flags",false);
-    auto* flags=options.resident?s.ResidentFlags():nullptr;
+    auto* flags=options.resident?s.FlagArray(1):nullptr;
     ManagedRootId text_root=0,attach_root=0;
     try {
         auto* name=s.Keep(s.objects.NewStringUtf8(options.unique_name.c_str()));text_root=s.retained.back();

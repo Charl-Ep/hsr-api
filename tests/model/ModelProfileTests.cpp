@@ -102,6 +102,7 @@ void TestAnimatorCatalog();
 void TestEffectCompletion();
 void TestEffectAccess();
 void TestEffectControl();
+void TestHitEffectControl();
 void TestEffectEntityFollow();
 void TestEffectActions();
 void TestEffectAnimatorParameters();
@@ -177,6 +178,7 @@ void RunTests(int argc, char** argv){
     TestAnimationControl();
     TestHitDirection();
     TestHitGeometry();
+    TestHitEffectControl();
     TestOfficialCatalog();
     MissingResolver failures;bool group_failed=false;
     try{ResolveModelMethods(failures);}catch(const std::exception& error){

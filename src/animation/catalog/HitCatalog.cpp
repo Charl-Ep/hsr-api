@@ -2,6 +2,34 @@
 #include <type_traits>
 
 namespace hksr::sdk_v1 {
+ConfigValue<HitEffectRules> OfficialCatalog::ReadHitEffectRules(const std::string& path) {
+    ConfigValue<HitEffectRules> out;auto& s=*state_;State::Scope scope(s);
+    try {
+        auto* force=scope.Keep(s.StaticValue(scope,"RPG.Client","MonoEffectManager","ForceEntityMutex"));
+        out.value.force_entity=Read<std::uint8_t>(force,Field(s.metadata.ReadObjectFields(force),"m_value","System.Boolean"))!=0;
+        if(!out.value.force_entity) {
+            auto* config=scope.Keep(s.StaticValue(scope,"RPG.Client","MonoEffectManager","EffectJsonConfig"));
+            auto* map=Read<void*>(config,Field(s.metadata.ReadObjectFields(config),"EffectMutexMap",
+                "System.Collections.Generic.Dictionary<System.String,RPG.GameCore.EffectMutexConfigData>"));
+            Require(map,"effect mutex map absent");scope.Keep({{true,0},map});
+            auto* key=scope.Keep(s.objects.NewStringUtf8(path.c_str()));
+            const auto type=s.metadata.ReadObjectType(map);bool present=false;
+            Require(native::Call(Instance(type,"ContainsKey","System.Boolean",{"System.String"}),&present,map,key).returned,"effect mutex key query failed");
+            if(present) {
+                auto* row=scope.Keep(s.Call(Instance(type,"get_Item","RPG.GameCore.EffectMutexConfigData",{"System.String"}),map,key));
+                const auto fields=s.metadata.ReadObjectFields(row);
+                EffectMutexRule rule;
+                rule.interval=Read<float>(row,Field(fields,"MinMutexTime","System.Single"));
+                rule.scope=static_cast<EffectMutexScope>(Read<std::int32_t>(row,Field(fields,"MinMutexType","RPG.GameCore.EffectMutexType")));
+                // Native CheckEffectMutex consumes the UInt32 field as Int32.
+                rule.maximum=Read<std::int32_t>(row,Field(fields,"MaxMutexCount","System.UInt32"));
+                out.value.configured=rule;
+            }
+        }
+        out.available=true;
+    }catch(const std::exception& e){out.error=e.what();}
+    return out;
+}
 VisualReactionInput OfficialCatalog::ReadDefaultHitNames() {
     VisualReactionInput out;out.present=true;auto& s=*state_;
     auto read=[&](TextInput& target,std::uint8_t category) {

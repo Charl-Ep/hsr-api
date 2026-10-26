@@ -1,4 +1,5 @@
 #pragma once
+#include <hksr/presentation/effects/EffectMutex.hpp>
 #include "../metadata/RuntimeMetadata.hpp"
 #include "../managed/ManagedArrays.hpp"
 #include "../unity/ComponentConfig.hpp"
@@ -332,6 +333,10 @@ public:
     HitAnimationDefaults ReadHitAnimationDefaults();
     VisualReactionInput ReadDefaultHitNames();
     CharacterHitInput ReadCharacterHitInput(const std::string& character_config);
+    ConfigValue<HitEffectRules> ReadHitEffectRules(const std::string& path);
+    // Named original data, available without constructing a battle or its cache.
+    // Prepares private shallow copies with the official per-row function. No
+    // source edits, global table registration, battle construction or flags applied.
     VisualConfigInput ReadDefaultVisualConfig();
     // The base PhaseAnimConfig only. Null means no character override, not error.
     // Selecting later phases is caller policy and is not inferred here.

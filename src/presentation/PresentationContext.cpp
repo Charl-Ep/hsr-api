@@ -62,6 +62,8 @@ struct PresentationContext::State {
     std::unique_ptr<PresentationIsolation> isolation;
     std::unique_ptr<EffectInputs> effect_inputs;
     std::unique_ptr<EffectControl> effect_control;
+    std::unique_ptr<HitEffectControl> hit_effect_control;
+    std::unique_ptr<OfficialCatalog> effect_catalog;
     std::unique_ptr<EffectActions> effect_actions;
     std::unique_ptr<EffectAnimatorParameters> effect_parameters;
     std::unique_ptr<EffectTriggerSource> effect_sources;
@@ -123,6 +125,13 @@ struct PresentationContext::State {
                 metadata->ReadFields("RPG.Client","MonoEffect"));
         }
         return *effect_control;
+    }
+    HitEffectControl& HitEffects() {
+        if(effect_control_closed)throw std::logic_error("presentation hit effects closed");
+        if(!hit_effect_control)hit_effect_control=std::make_unique<HitEffectControl>(*effect_access,
+            ResolveHitEffectControl(*metadata,metadata->ReadFields("RPG.Client","TriggerEffectParams"),
+                metadata->ReadFields("RPG.Client","MonoEffect")),bindings.references);
+        return *hit_effect_control;
     }
     EffectActions& EffectOperations() {
         if(effect_control_closed)throw std::logic_error("presentation effect actions closed");
@@ -426,6 +435,25 @@ std::optional<EffectRequestServices> PresentationContext::Effects() const {
             return s->effect_inputs->ConfigureSpatial(parameters,caster,callback,options);
         },[s](void* parameters,void* caster,void* target,void* callback,const ImpactEffectOptions& options) {
             return s->effect_inputs->ConfigureImpact(parameters,caster,target,callback,options);
+        },[s](void* parameters,void* caster,void* target,void* callback,const HitEffectPlacement& placement) {
+            auto& control=s->HitEffects(); // prepare before any load callback
+            auto out=s->effect_inputs->ConfigureHitReferences(parameters,caster,target,callback);
+            if(out.target.returned && out.completion.returned)out.target=control.Configure(parameters,placement);
+            return out;
+        },[s](EffectReference ref,void* effect,Position3 direction) {
+            return s->HitEffects().Loaded(ref,effect,direction);
+        },[s](void* manager,EffectReference ref,const HitEffectPlacement& placement) {
+            return s->HitEffects().Update(manager,ref,placement);
+        },[s](EffectReference ref,EffectMutexKind kind){return s->HitEffects().Replay(ref,kind);
+        },[s](void* caster,void* target,void* path,const EffectMutexRule& rule,float delay,const std::vector<EffectReference>& candidates) {
+            const auto manager=s->effect_inputs->Manager();
+            if(!manager.call.returned || !manager.object)throw std::runtime_error("effect mutex manager unavailable");
+            return s->HitEffects().Mutex(manager.object,caster,target,path,rule,delay,candidates);
+        },[s](const std::string& path) {
+            if(!s->effect_catalog)s->effect_catalog=std::make_unique<OfficialCatalog>(*s->metadata,*s->metadata,s->objects,
+                s->bindings.references,s->resources.Arrays(),s->resources.Components());
+            return s->effect_catalog->ReadHitEffectRules(path);
+        },[s](EffectReference ref,void* caster,void* path){return s->HitEffects().Matches(ref,caster,path);
         }};
 }
 std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices() const {
@@ -704,6 +732,7 @@ bool PresentationContext::Close() {
     if(s.movement_hosts && !s.movement_hosts->Close())closed=false;
     s.effect_control_closed=true;
     if(s.effect_control && !s.effect_control->Close())closed=false;
+    if(s.hit_effect_control && !s.hit_effect_control->Close())closed=false;
     if(s.effect_actions && !s.effect_actions->Close())closed=false;
     if(s.effect_parameters && !s.effect_parameters->Close())closed=false;
     for(auto it=s.exit_inputs.begin();it!=s.exit_inputs.end();) {

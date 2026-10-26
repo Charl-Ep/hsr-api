@@ -71,6 +71,47 @@ void Reset() {
 void TestOwnedEffectRequest() {
     Reset();
     {
+        auto services=Services();int aligned=0,updated=0;Position3 seen;
+        services.configure_hit=[&](void* raw,void* caster,void* target,void* callback,const HitEffectPlacement& p) {
+            Check(caster==&entity && target==&recipient && p.offset.x==2 && p.delay==.3f);
+            auto* value=static_cast<Params*>(raw);value->target=target;value->callback=callback;
+            return EffectInputResult{{true,0},{true,0}};
+        };
+        services.loaded_hit=[&](EffectReference ref,void* e,Position3 direction) {
+            Check(ref.parameters==&first && e==&effect);++aligned;seen=direction;
+            return EffectControlResult{EffectControlState::Applied,{true,0},true,"aligned"};
+        };
+        services.update_hit=[&](void* m,EffectReference ref,const HitEffectPlacement& p) {
+            Check(m==&manager && ref.parameters==&first && p.direction.z==11);++updated;
+            return EffectControlResult{EffectControlState::Applied,{true,0},true,"updated"};
+        };
+        OwnedEffectRequest request(services);expected_target=&recipient;sync=true;
+        HitEffectPlacement p{{2,3,4},{7,8,9},.3f,true};
+        request.StartHit(&entity,&recipient,&path,p);
+        Check(request.Status().submitted && aligned==1 && seen.z==9 && request.Status().hit_completion->state==EffectControlState::Applied);
+        p.direction.z=11;Check(request.UpdateHit(p).state==EffectControlState::Applied && updated==1);
+        Invoke(first,&effect);request.Service();Check(aligned==2 && seen.z==11);
+        request.Cancel();Invoke(first,&effect);Check(aligned==2); // late load stays owned, but is not reoriented
+        release_on_remove=true;request.Service();Check(request.Status().closed && roots.empty());
+        Check(request.UpdateHit(p).state==EffectControlState::Ended && updated==1);
+    }
+    Reset();
+    {
+        auto services=Services();ImpactEffectOptions options{{7,8,9},{0,0,1},true,true};
+        services.configure_impact=[&](void* raw,void* caster,void* target,void* callback,const ImpactEffectOptions& impact) {
+            Check(caster==&entity && target==&recipient && impact.position.x==7 && impact.attach && impact.align);
+            Check(std::any_of(roots.begin(),roots.end(),[](const auto& root){return root.second==&recipient;}));
+            auto* params=static_cast<Params*>(raw);params->target=target;params->callback=callback;
+            return EffectInputResult{{true,0},{true,0}};
+        };
+        services.manager=[&]{options.position.x=999;return ObjectResult{{true,0},current_manager};};
+        OwnedEffectRequest request(services);expected_target=&recipient;sync=true;
+        request.StartImpact(&entity,&recipient,&path,options);
+        Check(request.Status().submitted && request.Status().loaded_completions==1);
+        request.Cancel();release_on_remove=true;request.Service();Check(request.Status().closed && roots.empty());
+    }
+    Reset();
+    {
         auto services=Services();SpatialEffectOptions options;options.position={6,1,58};
         bool observed=false,retired=false;
         services.configure_spatial=[&](void* raw,void* caster,void* callback,const SpatialEffectOptions& pose) {

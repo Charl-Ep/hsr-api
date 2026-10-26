@@ -30,6 +30,9 @@ public:
     AnimationResources& Resources();
     Observed<float> ReadHitAngle(Position3 attacker,const HitShapeParameters&,const std::string& attach_point,
         float horizontal_degrees,float vertical_degrees,ManagedObjects&);
+    Observed<HitEffectPlacement> ReadHitEffectPlacement(Position3 attacker,const HitShapeParameters&,
+        const std::string& attach_point,float height,float angle_degrees,const std::optional<Position3>& offset_override,
+        bool offset_by_scale,float delay,ManagedObjects&);
     bool Close();
 private:
     struct State;

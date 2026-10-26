@@ -28,8 +28,13 @@ struct SpatialEffectOptions {
     bool fade_in=true,simulate_immediately=false;
     bool resident=false;
 };
+struct ImpactEffectOptions {
+    Position3 position{},direction{};
+    bool align=false,attach=false;
+};
 using ConfigureEntityEffect=std::function<EffectInputResult(void*,void*,void*,void*,const EntityEffectOptions&)>;
 using ConfigureSpatialEffect=std::function<EffectInputResult(void*,void*,void*,const SpatialEffectOptions&)>;
+using ConfigureImpactEffect=std::function<EffectInputResult(void*,void*,void*,void*,const ImpactEffectOptions&)>;
 // Engine-thread configuration of fresh unsubmitted requests. Managed references
 // use FieldInfo.SetValue. Entity options write only qualified blittable fields
 // at their current declared offsets and use the official attachment setter.
@@ -41,10 +46,14 @@ public:
     EffectInputs& operator=(const EffectInputs&)=delete;
     ObjectResult Manager(); // unrooted result, read current global each time
     EffectInputResult Configure(void* retained_parameters,void* retained_target,void* retained_completion);
+    EffectInputResult ConfigureHitReferences(void* retained_parameters,void* retained_caster,
+        void* retained_target,void* retained_completion);
     EffectInputResult ConfigureEntity(void* retained_parameters,void* retained_caster,
         void* retained_target,void* retained_completion,const EntityEffectOptions&);
     EffectInputResult ConfigureSpatial(void* retained_parameters,void* retained_caster,
         void* retained_completion,const SpatialEffectOptions&);
+    EffectInputResult ConfigureImpact(void* retained_parameters,void* retained_caster,
+        void* retained_target,void* retained_completion,const ImpactEffectOptions&);
     bool Close();
 private:
     EffectInputResult ConfigureImpl(void*,void*,void*,void*,const EntityEffectOptions&,const SpatialEffectOptions*);

@@ -11,7 +11,7 @@ namespace {
 using namespace hksr::api;
 int info,global_type,params_type,manager,other_manager,entity,callback;
 int global_field,target_field,callback_field,caster_field,name_field,attach_field,other_target,serial=0,lookups=0;
-int flags_field,flag_type,flag_box,flag_array,flag_writes=0;
+int flags_field,flag_type,flag_box,flag_array,flag_writes=0,param_field,last_flag=0,look_rotation_calls=0;
 void* service=&manager;
 struct NullableVector {Position3 value{};std::uint8_t present=0,padding[3]{};};
 struct NullableRotation {Rotation4 value{};std::uint8_t present=0,padding[3]{};};
@@ -19,7 +19,7 @@ struct Parameters {
     void* target=nullptr;void* completion=nullptr;void* caster=nullptr;void* name=nullptr;void* attach=nullptr;
     NullableVector offset,rotation,scale;std::uint8_t fade=0,simulate=0;std::int32_t usage=0;bool attached=false;float pitch=0;
     NullableVector initial,anchor;NullableRotation orientation;std::uint8_t ignore_prefab=0;
-    void* flags=nullptr;
+    void* flags=nullptr;void* param=nullptr;
 } parameters;
 std::map<int,void*> roots;std::vector<std::unique_ptr<std::string>> texts;
 bool fail_callback=false;
@@ -37,6 +37,7 @@ void* __fastcall Find(void* type,void* name,int flags,void* meta) {
     if(key=="UniqueEffectName")return &name_field;
     if(key=="DynamicAttach")return &attach_field;
     if(key=="Flags")return &flags_field;
+    if(key=="ParamEntity")return &param_field;
     Check(key=="CompleteCallback");return &callback_field;
 }
 void* __fastcall Get(void* field,void* object,void* meta){Check(field==&global_field && !object && meta==&info);return service;}
@@ -44,6 +45,7 @@ void __fastcall Set(void* field,void* object,void* value,int flags,void* binder,
     Check(object==&parameters && !flags && !binder && !culture && meta==&info);
     if(field==&target_field){Check(!value || value==&entity || value==&other_target);parameters.target=value;}
     else if(field==&caster_field){Check(value==&entity);parameters.caster=value;}
+    else if(field==&param_field){Check(value==&other_target);parameters.param=value;}
     else if(field==&name_field){parameters.name=value;}
     else if(field==&attach_field){parameters.attach=value;}
     else if(field==&flags_field){Check(!value || value==&flag_array);parameters.flags=value;}
@@ -51,7 +53,10 @@ void __fastcall Set(void* field,void* object,void* value,int flags,void* binder,
         if(fail_callback)RaiseException(0xE0670001,0,0,nullptr);}
 }
 void __fastcall Attach(void* object,bool enabled,void*) {Check(object==&parameters);parameters.attached=enabled && parameters.target;}
-void* __fastcall BoxFlag(void* type,int value,void* metadata){Check(type==&flag_type && value==1 && metadata==&info);return &flag_box;}
+void* __fastcall BoxFlag(void* type,int value,void* metadata){Check(type==&flag_type && (value==1 || value==6) && metadata==&info);last_flag=value;return &flag_box;}
+void __fastcall LookRotation(Position3* forward,Position3* up,Rotation4* rotation,void* metadata) {
+    Check(metadata==&info && forward->x==1 && forward->z==0 && up->y==1);++look_rotation_calls;*rotation={0,0.70710678f,0,0.70710678f};
+}
 void* __fastcall CreateFlags(void* type,int count,void* metadata){Check(type==&flag_type && count==1 && metadata==&info);return &flag_array;}
 int __fastcall ArrayLength(void* array,void*){Check(array==&flag_array);return 1;}
 void* __fastcall ArrayGet(void* array,int index,void*){Check(array==&flag_array && index==0);return &flag_box;}
@@ -62,6 +67,7 @@ struct Inputs:MethodResolver,ObjectMetadata,ManagedObjects {
         MetadataResolver resolver({{"System","RuntimeType",{{"GetField","System.Reflection.FieldInfo",
             {"System.String","System.Reflection.BindingFlags"},false,M(Find)}}},
             {"RPG.Client","TriggerEffectParams",{{"set_IsAttachToTargetEntity","System.Void",{"System.Boolean"},false,M(Attach)}}},
+            {"UnityEngine","Quaternion",{{"LookRotation_Injected","System.Void",{"UnityEngine.Vector3&","UnityEngine.Vector3&","UnityEngine.Quaternion&"},true,M(LookRotation)}}},
             {"System","Enum",{{"ToObject","System.Object",{"System.Type","System.Int32"},true,M(BoxFlag)}}},
             {"System","Array",{{"CreateInstance","System.Array",{"System.Type","System.Int32"},true,M(CreateFlags)},
                 {"get_Length","System.Int32",{},false,M(ArrayLength)},{"GetValue","System.Object",{"System.Int32"},false,M(ArrayGet)},
@@ -149,5 +155,21 @@ void TestEffectInputs() {
     spatial.rotation={0,0,0,0};rejected=false;
     try{inputs.ConfigureSpatial(&parameters,&entity,&callback,spatial);}catch(const std::invalid_argument&){rejected=true;}
     Check(rejected && roots.size()==spatial_roots);
+    parameters={};ImpactEffectOptions impact{{8,9,10},{1,0,0},true,true};
+    Check(inputs.ConfigureImpact(&parameters,&entity,&other_target,&callback,impact).completion.returned);
+    Check(parameters.caster==&entity && parameters.param==&other_target && parameters.target==&other_target);
+    Check(parameters.initial.present && parameters.initial.value.x==8 && parameters.orientation.present && parameters.orientation.value.y>0.7f);
+    Check(parameters.usage==5 && last_flag==6 && look_rotation_calls==1 && flag_writes==2);
+    Check(!parameters.anchor.present && !parameters.offset.present && !parameters.ignore_prefab);
+    const auto impact_roots=roots.size();parameters={};impact.align=false;impact.attach=false;
+    Check(inputs.ConfigureImpact(&parameters,&entity,&other_target,&callback,impact).completion.returned);
+    Check(!parameters.target && parameters.param==&other_target && parameters.orientation.value.w==1 && look_rotation_calls==1);
+    Check(roots.size()==impact_roots && flag_writes==2);
+    fail_callback=true;Check(!inputs.ConfigureImpact(&parameters,&entity,&other_target,&callback,impact).completion.returned);fail_callback=false;
+    parameters={};parameters.usage=17;parameters.pitch=12;parameters.attached=true;
+    Check(inputs.ConfigureHitReferences(&parameters,&entity,&other_target,&callback).completion.returned);
+    Check(parameters.caster==&entity && parameters.target==&other_target && parameters.completion==&callback);
+    Check(parameters.usage==17 && parameters.pitch==12 && parameters.attached && !parameters.offset.present && !parameters.flags);
+    fail_callback=true;Check(!inputs.ConfigureHitReferences(&parameters,&entity,&other_target,&callback).completion.returned);fail_callback=false;
     Check(inputs.Close() && roots.empty() && !inputs.Manager().call.returned);texts.clear();
 }

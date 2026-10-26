@@ -22,6 +22,8 @@ std::map<int,void*> roots;
 int metadata,handle=0,loads=0;
 Node* visual_global=nullptr;
 Node* reflected_type=nullptr;
+Node* effect_type=nullptr;
+std::map<std::wstring,Node*> effect_values;
 Node* reflected_field=nullptr;
 Node* helper_type=nullptr;
 std::map<std::wstring,Node*> helper_values;
@@ -54,12 +56,14 @@ void* __fastcall ReflectField(Node* type,Node* name,int flags,void* info) {
     Check(flags==56 && info==&metadata);
     if(type==helper_type) {auto field=New();field->type="StaticField";field->text=name->text;return field;}
     Check(type==reflected_type && name->text==L"GameCoreConstValueConfig");
+    if(type==effect_type) {auto field=New();field->type="EffectField";field->text=name->text;return field;}
     return reflected_field;
 }
 void* __fastcall ReflectValue(Node* field,void* instance,void* info) {
     Check(!instance && info==&metadata);
     if(field->type=="StaticField")return helper_values.at(field->text);
     Check(field==reflected_field);return visual_global;
+    if(field->type=="EffectField")return effect_values.at(field->text);
 }
 void* __fastcall CloneVisual(Node* source,void* info) {
     Check(info==&metadata);
@@ -111,6 +115,8 @@ void* __fastcall Value(Node* node,Node* key,void*) {
     Check(key->text==L"branch_key"); return node->items.at(1);
 }
 int __fastcall Length(Node* node,void*) { return static_cast<int>(node->text.size()); }
+bool __fastcall MutexContains(Node* node,Node* key,void*){return !node->items.empty() && key->text==L"hit-path";}
+void* __fastcall MutexValue(Node* node,Node* key,void*){Check(key->text==L"hit-path");return node->items.at(0);}
 std::uint16_t __fastcall Char(Node* node,int index,void*) { return static_cast<std::uint16_t>(node->text.at(index)); }
 struct Inputs:MethodResolver,ManagedObjects,ObjectMetadata,TypeRelationships {
     int full_types=0, field_reads=0;
@@ -171,13 +177,18 @@ struct Inputs:MethodResolver,ManagedObjects,ObjectMetadata,TypeRelationships {
     }
     ObjectResult ManagedType(const char* space,const char* name) override {
         if(std::string(space).empty() && std::string(name)=="NNMPPHHHEIK")return {{true,0},helper_type};
+        if(std::string(space)=="RPG.Client" && std::string(name)=="MonoEffectManager")return {{true,0},effect_type};
         if(std::string(space)=="RPG.GameCore") {Check(std::string(name)=="GameCoreConfigManager");return {{true,0},reflected_type};}
         Check(std::string(space)=="System" && std::string(name)=="Object"); return {{true,0},New()};
     }
     DeclaredType ReadObjectType(void* object) override {
         ++full_types;
         auto node=static_cast<Node*>(object); DeclaredType type{"RPG.GameCore",node->type,{}};
-        if(node==reflected_field || node->type=="StaticField")type.methods.push_back({"GetValue","System.Object",{"System.Object"},false,M(ReflectValue)});
+        if(node==reflected_field || node->type=="StaticField" || node->type=="EffectField")type.methods.push_back({"GetValue","System.Object",{"System.Object"},false,M(ReflectValue)});
+        if(node->type=="EffectDictionary") {
+            type.methods.push_back({"ContainsKey","System.Boolean",{"System.String"},false,M(MutexContains)});
+            type.methods.push_back({"get_Item","RPG.GameCore.EffectMutexConfigData",{"System.String"},false,M(MutexValue)});
+        }
         if(node->type=="Dictionary") {
             type.methods.push_back({"get_Keys","Test.Keys",{},false,M(Keys)});
             type.methods.push_back({"get_Item","RPG.GameCore.FixtureConfig",{"System.String"},false,M(Value)});
@@ -640,6 +651,22 @@ void TestActionConfig() {
         ready_defaults.hit_override_layer.value=="Fixture_Override");
     helper_values.erase(L"PIOGPCGJJAP");helper_values[L"CKPEADONMLA"]=nullptr;
     const auto partial_ready=catalog.ReadReadyAnimationDefaults();
+    effect_type=New();auto effect_config=New();auto force=New();Field(force,"m_value","System.Boolean",std::uint8_t{0});
+    auto effect_map=New();effect_map->type="EffectDictionary";
+    Field(effect_config,"EffectMutexMap","System.Collections.Generic.Dictionary<System.String,RPG.GameCore.EffectMutexConfigData>",effect_map);
+    effect_values={{L"ForceEntityMutex",force},{L"EffectJsonConfig",effect_config}};
+    auto effect_rule=catalog.ReadHitEffectRules("hit-path");
+    Check(effect_rule.available && !effect_rule.value.configured && !effect_rule.value.force_entity && roots.empty());
+    auto mutex=New();Field(mutex,"MinMutexTime","System.Single",.125f);
+    Field(mutex,"MinMutexType","RPG.GameCore.EffectMutexType",std::int32_t{0});Field(mutex,"MaxMutexCount","System.UInt32",std::uint32_t{3});
+    effect_map->items.push_back(mutex);effect_rule=catalog.ReadHitEffectRules("hit-path");
+    Check(effect_rule.available && effect_rule.value.configured && effect_rule.value.configured->interval==.125f &&
+        effect_rule.value.configured->maximum==3 && effect_rule.value.configured->scope==EffectMutexScope::Global && roots.empty());
+    Check(!catalog.ReadHitEffectRules("another").value.configured);
+    effect_values[L"EffectJsonConfig"]=nullptr;Check(!catalog.ReadHitEffectRules("hit-path").available && roots.empty());
+    force->slots[0]=1;effect_rule=catalog.ReadHitEffectRules("hit-path");
+    Check(effect_rule.available && effect_rule.value.force_entity && !effect_rule.value.configured && roots.empty());
+    effect_values.clear();effect_type=nullptr;
     Check(!partial_ready.hit_additive_layer.available && !partial_ready.hit_additive_layer.error.empty() &&
         partial_ready.hit_override_layer.available && partial_ready.default_expression.available &&
         partial_ready.default_expression.value.empty() && partial_ready.transitions.size()==6 && roots.empty());

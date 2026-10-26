@@ -4,17 +4,32 @@
 
 namespace hksr::sdk_v1 {
 namespace {
-// No borrowed MonoEffect pointer survives a callback. The parameter identity
-// is compared only, never dereferenced there. Shared ownership also covers a
-// dispatch already in flight when the native owner disconnects its bridge.
+// No borrowed MonoEffect pointer survives a callback. Hit-specific visual
+// completion consumes the live callback synchronously, after identity checking.
+// Shared ownership covers a dispatch in flight during bridge disconnection.
 struct Signals {
     std::mutex mutex;
     void* parameters=nullptr;
     std::uint64_t completions=0,loaded=0,foreign=0;
+    bool hit_cancelled=false;
+    Position3 hit_direction;
+    std::function<EffectControlResult(void*,Position3)> hit_loaded;
+    std::optional<EffectControlResult> hit_result;
     void Receive(api::EffectCompletionEvent event) {
-        std::lock_guard<std::mutex> lock(mutex);
-        if(event.parameters!=parameters){++foreign;return;}
-        ++completions;if(event.effect)++loaded;
+        std::function<EffectControlResult(void*,Position3)> apply;Position3 direction;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            if(event.parameters!=parameters){++foreign;return;}
+            ++completions;if(event.effect)++loaded;
+            if(event.effect && !hit_cancelled){apply=hit_loaded;direction=hit_direction;}
+        }
+        // Official damage-hit alignment runs in the completion dispatch, not
+        // one polling frame later. Only this exact retained request can reach it.
+        if(apply) {
+            EffectControlResult result;
+            try{result=apply(event.effect,direction);}catch(const std::exception& e){result.detail=e.what();}
+            std::lock_guard<std::mutex> lock(mutex);hit_result=std::move(result);
+        }
     }
 };
 }
@@ -34,6 +49,7 @@ struct OwnedEffectRequest::State {
     bool busy=false,fade=true,release_attempted=false,source_observed=false;
     std::uint64_t removed_at_loaded=0;
     bool tracked=false,receipt_retained=false;
+    bool hit=false;
     void* last_observed_instance=nullptr; // identity comparison only, never dereferenced
     std::uint64_t observed_loads=0,removed_at_observation=0;
     explicit State(EffectRequestServices value):services(std::move(value)),roots(services.references){}
@@ -50,6 +66,7 @@ struct OwnedEffectRequest::State {
         status.completions=signals->completions;
         status.loaded_completions=signals->loaded;
         status.foreign_completions=signals->foreign;
+        status.hit_completion=signals->hit_result;
     }
     void Drain() {
         if(source_observed) {
@@ -106,6 +123,7 @@ OwnedEffectRequest::OwnedEffectRequest(EffectRequestServices services,ConfigureE
 OwnedEffectRequest::~OwnedEffectRequest(){delete state_;}
 const EffectRequestStatus& OwnedEffectRequest::Status() const{return state_->status;}
 void OwnedEffectRequest::Cancel(bool fade) {
+    {std::lock_guard<std::mutex> lock(state_->signals->mutex);state_->signals->hit_cancelled=true;}
     if(state_->fade!=fade)++state_->removal_revision;
     state_->status.cancelled=true;state_->fade=fade;
     // General scene teardown must not drop already requested immediate/unbind
@@ -113,6 +131,7 @@ void OwnedEffectRequest::Cancel(bool fade) {
     state_->removal_options.fade=fade;
 }
 void OwnedEffectRequest::Cancel(EffectRemovalOptions options) {
+    {std::lock_guard<std::mutex> lock(state_->signals->mutex);state_->signals->hit_cancelled=true;}
     const auto previous=state_->removal_options;
     if(!state_->explicit_removal || previous.fade!=options.fade || previous.immediate_fade!=options.immediate_fade || previous.unbind!=options.unbind)
         ++state_->removal_revision;
@@ -131,7 +150,36 @@ void OwnedEffectRequest::StartSpatial(void* caster,void* path,const SpatialEffec
     const auto captured=options;
     StartImpl(caster,nullptr,path,nullptr,&captured);
 }
-void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const EntityEffectOptions* options,const SpatialEffectOptions* spatial) {
+void OwnedEffectRequest::StartImpact(void* caster,void* target,void* path,const ImpactEffectOptions& options) {
+    const auto captured=options;StartImpl(caster,target,path,nullptr,nullptr,&captured);
+}
+void OwnedEffectRequest::StartHit(void* caster,void* target,void* path,const HitEffectPlacement& placement) {
+    const auto captured=placement;StartImpl(caster,target,path,nullptr,nullptr,nullptr,&captured);
+}
+EffectControlResult OwnedEffectRequest::UpdateHit(const HitEffectPlacement& placement) {
+    auto& s=*state_;const auto captured=placement;
+    if(!s.hit || s.busy || !s.status.submitted || s.status.cancelled || s.status.closed || s.status.request_ended)
+        return {EffectControlState::Ended,{},true,"hit request is not available for update"};
+    if(!s.services.update_hit)return {EffectControlState::Unsupported,{},true,"hit update unavailable"};
+    s.busy=true;struct Exit{bool& flag;~Exit(){flag=false;}} exit{s.busy};
+    {std::lock_guard<std::mutex> lock(s.signals->mutex);s.signals->hit_direction=captured.direction;}
+    auto result=s.services.update_hit(s.manager,s.status.reference,captured);
+    s.ReadSignals();return result;
+}
+EffectControlResult OwnedEffectRequest::ReplayHit(EffectMutexKind kind) {
+    auto& s=*state_;
+    if(!s.hit || s.busy || !s.status.submitted || s.status.cancelled || s.status.closed || s.status.request_ended)
+        return {EffectControlState::Ended,{},true,"hit request unavailable for replay"};
+    if(!s.services.replay_hit)return {EffectControlState::Unsupported,{},true,"hit replay unavailable"};
+    s.busy=true;struct Exit{bool& value;~Exit(){value=false;}} exit{s.busy};
+    return s.services.replay_hit(s.status.reference,kind);
+}
+Observed<bool> OwnedEffectRequest::MatchesHitPath(void* caster,void* path) const {
+    const auto& s=*state_;
+    if(!s.hit || s.busy || !s.status.submitted || s.status.cancelled || s.status.closed || s.status.request_ended)return {false,{true,0}};
+    return s.services.match_hit?s.services.match_hit(s.status.reference,caster,path):Observed<bool>{};
+}
+void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const EntityEffectOptions* options,const SpatialEffectOptions* spatial,const ImpactEffectOptions* impact,const HitEffectPlacement* hit) {
     auto& s=*state_;auto& out=s.status;
     if(out.started)throw std::logic_error("effect request already started");
     out.started=true;
@@ -141,6 +189,8 @@ void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const En
     try {
         if(options && !s.configure_entity)throw std::runtime_error("entity effect configuration unavailable");
         if(spatial && !s.services.configure_spatial)throw std::runtime_error("spatial effect configuration unavailable");
+        if(impact && !s.services.configure_impact)throw std::runtime_error("impact effect configuration unavailable");
+        if(hit && (!s.services.configure_hit || !s.services.loaded_hit))throw std::runtime_error("hit effect configuration unavailable");
         s.Keep(entity);s.Keep(path);
         if(target && target!=entity)s.Keep(target);
         if(!target && !spatial)throw std::runtime_error("entity effect target is null");
@@ -157,11 +207,17 @@ void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const En
         if(!acquired.call.returned || !out.reference.parameters)throw std::runtime_error("effect request acquisition failed");
         s.Keep(out.reference.parameters);
         s.signals->parameters=out.reference.parameters;
+        if(hit) {
+            s.hit=true;s.signals->hit_direction=hit->direction;
+            s.signals->hit_loaded=[apply=s.services.loaded_hit,ref=out.reference](void* effect,Position3 direction){return apply(ref,effect,direction);};
+        }
         s.callback=std::make_unique<api::EffectCompletion>(s.services.completion,s.services.references,
             [signals=s.signals](api::EffectCompletionEvent event){signals->Receive(event);});
         const auto callback=s.callback->Create();
         if(!callback.call.returned || !callback.object)throw std::runtime_error("effect completion creation failed");
-        const auto configured=spatial?s.services.configure_spatial(out.reference.parameters,entity,callback.object,*spatial):
+        const auto configured=hit?s.services.configure_hit(out.reference.parameters,entity,target,callback.object,*hit):
+            impact?s.services.configure_impact(out.reference.parameters,entity,target,callback.object,*impact):
+            spatial?s.services.configure_spatial(out.reference.parameters,entity,callback.object,*spatial):
             options?s.configure_entity(out.reference.parameters,entity,target,callback.object,*options):
             s.services.configure(out.reference.parameters,entity,callback.object);
         s.Trace("configure target="+std::to_string(configured.target.returned)+" callback="+std::to_string(configured.completion.returned));
@@ -191,6 +247,7 @@ void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const En
             else out.request_ended=true;
         }
     }
+    if(out.cancelled){std::lock_guard<std::mutex> lock(s.signals->mutex);s.signals->hit_cancelled=true;}
     s.ReadSignals();
     if(out.request_ended)s.Drain();
 }

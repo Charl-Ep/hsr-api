@@ -3,6 +3,7 @@
 #include "EffectControl.hpp"
 #include "EffectInputs.hpp"
 #include "EffectActions.hpp"
+#include "EffectMutex.hpp"
 #include <memory>
 #include <string>
 #include <vector>
@@ -30,6 +31,14 @@ public:
     std::unique_ptr<EventRegistrationLease> RegisterExit(EntityToken,const std::string& state,
         const std::vector<EffectRemovalSource>&) const;
     void Trace(const std::string&) const;
+    // Read-only official mutex queries; candidates restrict subsequent replay
+    // to already-owned receipts. Callers retain entity/path through this call.
+    // Non-null caster maps the path as the source AttackData check does. The
+    // public-config check passes null and uses the original configured key.
+    EffectMutexDecision HitMutex(void* caster,void* target,void* path,const EffectMutexRule&,float delay,
+        const std::vector<EffectReference>& replay_candidates={}) const;
+    // Throws on an unread configuration; absent map entry is a valid value.
+    HitEffectRules ReadHitRules(const std::string& path) const;
     EffectControlResult SetProgress(EffectReference,float progress,float transition_seconds=0) const;
     EffectControlResult SetAnimatorState(EffectReference,int state_hash,
         float normalized_transition_duration=0,bool restart=true) const;

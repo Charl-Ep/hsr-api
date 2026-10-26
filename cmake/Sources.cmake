@@ -131,6 +131,7 @@ set(HKSR_API_SOURCES
     # src/presentation/hits
     src/presentation/hits/HitGeometry.cpp
 
+    src/presentation/effects/HitEffectControl.cpp
     # src/presentation/audio
     src/presentation/audio/SoundAccess.cpp
     src/presentation/audio/SoundTracking.cpp
@@ -282,6 +283,7 @@ set(HKSR_API_TEST_SOURCES
     tests/presentation/effects/EffectControlTests.cpp
     tests/presentation/effects/EffectEntityFollowTests.cpp
     tests/presentation/effects/EffectActionsTests.cpp
+    tests/presentation/effects/HitEffectControlTests.cpp
     tests/presentation/effects/EffectAnimatorParametersTests.cpp
     tests/presentation/effects/EffectCompletionTests.cpp
     tests/presentation/effects/EffectInputsTests.cpp

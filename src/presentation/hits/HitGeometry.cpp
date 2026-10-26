@@ -73,6 +73,26 @@ Observed<Position3> HitGeometry::EffectOffset(void* transform,const HitShapeSnap
     if(!Finite(out.value))out.read.returned=false;
     return out;
 }
+Observed<HitEffectPlacement> HitGeometry::EffectPlacement(void* logical,void* root,const HitShapeSnapshot& shape,
+    Position3 attacker,float height,float angle,const std::optional<Position3>& override_offset,bool scaled,float delay) const {
+    Observed<HitEffectPlacement> out;
+    if(!Finite(attacker) || !Finite(shape.center) || !Nonnegative(shape.vertical_extent) || !std::isfinite(height) || !std::isfinite(delay))return out;
+    auto& p=out.value;
+    p.direction={attacker.x-shape.center.x,attacker.y-std::max(0.f,shape.center.y-shape.vertical_extent),attacker.z-shape.center.z};
+    if(override_offset) {if(!Finite(*override_offset))return out;p.offset=*override_offset;}
+    else {
+        const auto offset=EffectOffset(root,shape,attacker,height,angle);out.read=offset.read;
+        if(!out.read.returned)return out;
+        p.offset=offset.value;
+    }
+    if(scaled && logical) {
+        Position3 scale;out.read=native::Call(methods_.world_scale,&scale,logical);
+        if(!out.read.returned || !Finite(scale)){out.read.returned=false;return out;}
+        p.offset={p.offset.x*scale.x,p.offset.y*scale.y,p.offset.z*scale.z};
+    } // Native absent TransformComponent branch uses unit scale.
+    p.delay=delay;p.ignore_prefab_attach_point=height>=0;
+    out.read.returned=Finite(p.direction) && Finite(p.offset);return out;
+}
 HitGeometryMethods ResolveHitGeometryMethods(MethodResolver& methods,const std::vector<DeclaredField>& fields) {
     HitGeometryMethods out;
     auto get=[&](const char* ns,const char* type,const char* name,const char* result,std::initializer_list<const char*> parameters) {
@@ -80,6 +100,7 @@ HitGeometryMethods ResolveHitGeometryMethods(MethodResolver& methods,const std::
         catch(const std::exception& e){out.binding_errors.push_back(std::string(type)+"."+name+": "+e.what());return Method{};}
     };
     out.transform_vector=get("RPG.GameCore","TransformComponent","TransformVector","RPG.MVector3",{"RPG.MVector3"});
+    out.world_scale=get("RPG.GameCore","TransformComponent","get_WorldScale","RPG.MVector3",{});
     out.position=get("UnityEngine","Transform","get_position_Injected","System.Void",{"UnityEngine.Vector3&"});
     out.direction=get("UnityEngine","Transform","TransformDirection_Injected","System.Void",{"UnityEngine.Vector3&","UnityEngine.Vector3&"});
     out.inverse_point=get("UnityEngine","Transform","InverseTransformPoint_Injected","System.Void",{"UnityEngine.Vector3&","UnityEngine.Vector3&"});

@@ -30,6 +30,7 @@ void __fastcall Direction(void* object,Position3* in,Position3* out,void* metada
 void __fastcall Inverse(void* object,Position3* in,Position3* out,void* metadata) {
     Check(object==&root && metadata==&info);seen_world=*in;*out={in->x-100,in->y-10,in->z-20};
 }
+Position3 __fastcall Scale(void* object,void* metadata){Check(object==&logic && metadata==&info);return {2,3,4};}
 void* __fastcall Attach(void*,void*,bool create,void* metadata){Check(!create && metadata==&info);return &anchor;}
 int entity,model_type,logic_type,animator,game_object,next_handle=0;
 struct Model {int pad=7;bool flipped=true;} model;
@@ -66,7 +67,8 @@ struct Objects:ManagedObjects {
 }
 void TestHitGeometry() {
     MetadataResolver declarations({
-        {"RPG.GameCore","TransformComponent",{{"TransformVector","RPG.MVector3",{"RPG.MVector3"},false,M(Transform)}}},
+        {"RPG.GameCore","TransformComponent",{{"TransformVector","RPG.MVector3",{"RPG.MVector3"},false,M(Transform)},
+            {"get_WorldScale","RPG.MVector3",{},false,M(Scale)}}},
         {"RPG.GameCore","CharacterModelComponent",{{"GetAttachPoint","UnityEngine.Transform",{"System.String","System.Boolean"},false,M(Attach)}}},
         {"UnityEngine","Transform",{
             {"get_position_Injected","System.Void",{"UnityEngine.Vector3&"},false,M(Position)},
@@ -98,6 +100,13 @@ void TestHitGeometry() {
     // remembered previous attack or the actor's world rotation.
     effect=geometry.EffectOffset(&root,attached.value,{103,11,19},.5f,0);
     Check(effect.read.returned && Close(seen_world.x,103) && Close(seen_world.z,20));
+    auto hit=geometry.EffectPlacement(&logic,&root,attached.value,{103,11,29},1,0,{},false,.3f);
+    Check(hit.read.returned && hit.value.direction.x==0 && hit.value.direction.y==1 && hit.value.direction.z==10);
+    Check(hit.value.ignore_prefab_attach_point && hit.value.delay==.3f);
+    hit=geometry.EffectPlacement(&logic,nullptr,attached.value,{103,11,29},-1,0,Position3{1,2,3},true,0);
+    Check(hit.read.returned && hit.value.offset.x==2 && hit.value.offset.y==6 && hit.value.offset.z==12 && !hit.value.ignore_prefab_attach_point);
+    hit=geometry.EffectPlacement(nullptr,nullptr,unanchored.value,{13,-15,9},-1,0,Position3{1,2,3},true,0);
+    Check(hit.read.returned && hit.value.offset.y==2 && hit.value.direction.y==-15); // bottom is clamped to world zero
     effect=geometry.EffectOffset(nullptr,{}, {},-1,0);
     Check(effect.read.returned && effect.value.x==0 && effect.value.y==0 && effect.value.z==0);
     Check(!geometry.EffectOffset(nullptr,attached.value,{},0,0).read.returned);
@@ -125,6 +134,8 @@ void TestHitGeometry() {
     Objects objects;ActorAnimationSession session(token,bindings);
     const auto angle=session.ReadHitAngle({13,100,19},input,"",0,0,objects);
     Check(angle.read.returned && angle.value==-90 && handles.size()==3);
+    const auto owned_effect=session.ReadHitEffectPlacement({13,100,19},input,"",-1,0,Position3{1,2,3},true,0,objects);
+    Check(owned_effect.read.returned && owned_effect.value.offset.y==6 && owned_effect.value.direction.y==100);
     on_euler=[&]{TrackedEntities().Disposed(token);};
     Check(!session.ReadHitAngle({13,100,19},input,"",0,0,objects).read.returned);
     Check(session.Close() && handles.empty());

@@ -1,5 +1,7 @@
 #pragma once
 #include "../../entity/MapNpcInputs.hpp"
+#include "../effects/HitEffectControl.hpp"
+#include <optional>
 
 namespace hksr::sdk_v1 {
 // CharacterCollisionType, not the differently numbered HitBox union tag.
@@ -20,6 +22,7 @@ struct HitGeometryMethods {
     bool logical_position_available=false;
     std::vector<std::string> binding_errors;
     Method attach_point;
+    Method world_scale;
 };
 // Read-only projection of the official hit-shape inputs. Does not allocate or
 // write AbilityComponent, register collisions, or choose a configuration source.
@@ -35,6 +38,9 @@ public:
     // Negative height selects the official default local offset (zero).
     Observed<Position3> EffectOffset(void* receiver_transform,const HitShapeSnapshot&,
         Position3 attacker,float height,float angle_degrees) const;
+    Observed<HitEffectPlacement> EffectPlacement(void* logical_transform,void* receiver_transform,const HitShapeSnapshot&,
+        Position3 attacker,float height,float angle_degrees,const std::optional<Position3>& offset_override,
+        bool offset_by_scale,float delay) const;
 private:
     HitGeometryMethods methods_;
 };

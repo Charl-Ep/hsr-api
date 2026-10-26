@@ -1,5 +1,6 @@
 #include <hksr/presentation/effects/PresentationEffects.hpp>
 #include <hksr/presentation/effects/OwnedEffectRequest.hpp>
+#include <stdexcept>
 
 namespace hksr::sdk_v1 {
 struct PresentationEffects::State {EffectRequestServices services;EffectControlServices control;ConfigureEntityEffect configure_entity;EffectActionServices actions;};
@@ -23,6 +24,17 @@ std::unique_ptr<EventRegistrationLease> PresentationEffects::RegisterExit(Entity
 }
 void PresentationEffects::Trace(const std::string& text) const {
     if(state_->services.trace)state_->services.trace(text);
+}
+EffectMutexDecision PresentationEffects::HitMutex(void* caster,void* target,void* path,const EffectMutexRule& rule,float delay,
+    const std::vector<EffectReference>& candidates) const {
+    if(!state_->services.hit_mutex)throw std::runtime_error("hit effect mutex service unavailable");
+    return state_->services.hit_mutex(caster,target,path,rule,delay,candidates);
+}
+HitEffectRules PresentationEffects::ReadHitRules(const std::string& path) const {
+    if(!state_->services.hit_rules)throw std::runtime_error("hit effect rules service unavailable");
+    const auto value=state_->services.hit_rules(path);
+    if(!value.available)throw std::runtime_error("hit effect rules unread: "+value.error);
+    return value.value;
 }
 EffectControlResult PresentationEffects::SetProgress(EffectReference ref,float value,float duration) const {
     return state_->control.progress?state_->control.progress(ref,value,duration):
