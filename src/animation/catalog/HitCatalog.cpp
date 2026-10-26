@@ -32,6 +32,15 @@ CharacterHitInput OfficialCatalog::ReadCharacterHitInput(const std::string& path
     capture(out.repeat_occur_at,"RepeatOccurAnimWhenBeHitNormalizedTime",[&]{
         return Read<float>(config,Field(fields,"RepeatOccurAnimWhenBeHitNormalizedTime","System.Single"));
     });
+    capture(out.shape,"HitBox",[&] {
+        HitShapeParameters shape;
+        shape.kind=static_cast<HitShapeKind>(Read<std::int32_t>(config,Field(fields,"HitBoxType","RPG.GameCore.CharacterCollisionType")));
+        shape.width=Read<float>(config,Field(fields,"HitBoxWidth","System.Single"));
+        shape.height=Read<float>(config,Field(fields,"HitBoxHeight","System.Single"));
+        shape.offset=Read<Position3>(config,Field(fields,"HitBoxOffset","RPG.MVector3"));
+        return shape;
+    });
+    capture(out.hit_box_attach_point,"HitBoxAttachPoint",[&]{return s.String(config,fields,"HitBoxAttachPoint");});
     void* phase=nullptr;
     capture(out.phase_present,"PhaseAnimConfig",[&] {
         phase=Read<void*>(config,Field(fields,"PhaseAnimConfig","RPG.GameCore.CharacterPhaseAnimConfig"));

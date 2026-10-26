@@ -570,22 +570,6 @@ void TestActionConfig() {
     const auto alias=catalog.ReadDefaultVisualConfig();alias_visual_clone=false;
     Check(!alias.behaviors.rows[0].prepared && prepared_rows==count_before_alias && roots.empty());
     Field(visual_global,"SkillReadyAnimDefaultTransitDuration","System.Single",0.18f);
-    helper_type=New();helper_values={{L"CKPEADONMLA",Text(L"Fixture_DefaultFace")},
-        {L"HINPIEHBBMO",Text(L"Fixture_HitFace")},
-        {L"MIOIOHJKFEE",Text(L"Fixture_Empty")},{L"PIOGPCGJJAP",Text(L"Fixture_Additive")},
-        {L"AIGNNOJHKPJ",Text(L"Fixture_Override")}};
-    const auto ready_defaults=catalog.ReadReadyAnimationDefaults();
-    Check(ready_defaults.hit_expression.available && ready_defaults.hit_expression.value=="Fixture_HitFace");
-    Check(ready_defaults.transition_in.available && ready_defaults.transition_in.value==0.18f && ready_defaults.transitions.size()==6 && roots.empty());
-    Check(ready_defaults.transitions.front().from.value==1 && ready_defaults.transitions.front().to.value==2 &&
-        ready_defaults.transitions.front().state.value=="Fixture_Fallback");
-    Check(ready_defaults.default_expression.available && ready_defaults.default_expression.value=="Fixture_DefaultFace" &&
-        ready_defaults.empty_layer_state.value=="Fixture_Empty" && ready_defaults.hit_additive_layer.value=="Fixture_Additive" &&
-        ready_defaults.hit_override_layer.value=="Fixture_Override");
-    helper_values.erase(L"PIOGPCGJJAP");helper_values[L"CKPEADONMLA"]=nullptr;
-    const auto partial_ready=catalog.ReadReadyAnimationDefaults();
-    Check(!partial_ready.hit_additive_layer.available && !partial_ready.hit_additive_layer.error.empty() &&
-        partial_ready.hit_override_layer.available && partial_ready.default_expression.available &&
     const auto loads_before_hit=loads;
     auto weight_a=New(),weight_b=New();
     Field(weight_a,"m_value","System.Single",0.23f);Field(weight_b,"m_value","System.Single",1.17f);
@@ -604,11 +588,24 @@ void TestActionConfig() {
     Field(hit_character,"Resilience","RPG.GameCore.ResilienceEnum",std::int32_t(3));
     Field(hit_character,"RepeatOccurAnimWhenBeHitNormalizedTime","System.Single",-1.f);
     Field(hit_character,"PhaseAnimConfig","RPG.GameCore.CharacterPhaseAnimConfig",static_cast<void*>(nullptr));
+    Field(hit_character,"HitBoxType","RPG.GameCore.CharacterCollisionType",std::int32_t(0));
+    Field(hit_character,"HitBoxWidth","System.Single",.3f);
+    Field(hit_character,"HitBoxHeight","System.Single",1.5f);
+    String(hit_character,"HitBoxAttachPoint",L"Fixture_Attachment");
+    // A value-type field occupies 12 bytes, independent of the fixture's
+    // eight-byte scalar cells; no subsequent field is allocated in this span.
+    const auto offset=offsetof(Node,slots)+40*sizeof(std::uint64_t);
+    const Position3 hit_offset{.1f,.2f,.3f};
+    std::memcpy(reinterpret_cast<char*>(hit_character)+offset,&hit_offset,sizeof(hit_offset));
+    hit_character->fields.push_back({"RPG.GameCore","FixtureConfig","HitBoxOffset","RPG.MVector3",offset,0,true});
     const auto hit_loads=loads,hit_prepared=prepared_rows;
     auto receiver=catalog.ReadCharacterHitInput("receiver");
     Check(receiver.loaded && receiver.resilience.available && receiver.resilience.value==3 &&
         receiver.repeat_occur_at.available && receiver.repeat_occur_at.value==-1 && receiver.phase_present.available &&
         !receiver.phase_present.value && !receiver.phase.present && loads==hit_loads+1 && prepared_rows==hit_prepared && roots.empty());
+    Check(receiver.shape.available && receiver.shape.value.kind==HitShapeKind::Capsule &&
+        receiver.shape.value.width==.3f && receiver.shape.value.height==1.5f && receiver.shape.value.offset.y==.2f &&
+        receiver.hit_box_attach_point.available && receiver.hit_box_attach_point.value=="Fixture_Attachment");
     // Independent scalar failure does not hide a usable phase/name input.
     hit_character->fields.clear();
     auto hit_phase=New();String(hit_phase,"Hit",L"Phase_Hit");
@@ -616,6 +613,7 @@ void TestActionConfig() {
     receiver=catalog.ReadCharacterHitInput("receiver");
     Check(receiver.loaded && !receiver.resilience.available && receiver.phase_present.available && receiver.phase_present.value &&
         receiver.phase.present && receiver.phase.hit.available && receiver.phase.hit.value=="Phase_Hit" && roots.empty());
+    Check(!receiver.shape.available && !receiver.shape.error.empty() && !receiver.hit_box_attach_point.available);
     const auto missing_receiver=catalog.ReadCharacterHitInput("missing-receiver");
     Check(!missing_receiver.loaded && !missing_receiver.issues.empty() && roots.empty());
     // The input table's indices are semantic. One unread element cannot shift
@@ -628,6 +626,22 @@ void TestActionConfig() {
     const auto absent_hit=catalog.ReadHitAnimationDefaults();visual_global=saved_global;
     Check(!absent_hit.resilience_weights.available && !absent_hit.avatar_weight.available &&
         !absent_hit.monster_weight.available && !absent_hit.minimum_frame_interval.available && roots.empty());
+    helper_type=New();helper_values={{L"CKPEADONMLA",Text(L"Fixture_DefaultFace")},
+        {L"HINPIEHBBMO",Text(L"Fixture_HitFace")},
+        {L"MIOIOHJKFEE",Text(L"Fixture_Empty")},{L"PIOGPCGJJAP",Text(L"Fixture_Additive")},
+        {L"AIGNNOJHKPJ",Text(L"Fixture_Override")}};
+    const auto ready_defaults=catalog.ReadReadyAnimationDefaults();
+    Check(ready_defaults.hit_expression.available && ready_defaults.hit_expression.value=="Fixture_HitFace");
+    Check(ready_defaults.transition_in.available && ready_defaults.transition_in.value==0.18f && ready_defaults.transitions.size()==6 && roots.empty());
+    Check(ready_defaults.transitions.front().from.value==1 && ready_defaults.transitions.front().to.value==2 &&
+        ready_defaults.transitions.front().state.value=="Fixture_Fallback");
+    Check(ready_defaults.default_expression.available && ready_defaults.default_expression.value=="Fixture_DefaultFace" &&
+        ready_defaults.empty_layer_state.value=="Fixture_Empty" && ready_defaults.hit_additive_layer.value=="Fixture_Additive" &&
+        ready_defaults.hit_override_layer.value=="Fixture_Override");
+    helper_values.erase(L"PIOGPCGJJAP");helper_values[L"CKPEADONMLA"]=nullptr;
+    const auto partial_ready=catalog.ReadReadyAnimationDefaults();
+    Check(!partial_ready.hit_additive_layer.available && !partial_ready.hit_additive_layer.error.empty() &&
+        partial_ready.hit_override_layer.available && partial_ready.default_expression.available &&
         partial_ready.default_expression.value.empty() && partial_ready.transitions.size()==6 && roots.empty());
     visual_global=nullptr;const auto unavailable=catalog.ReadDefaultVisualConfig();
     Check(!unavailable.loaded && !unavailable.issues.empty() && roots.empty());

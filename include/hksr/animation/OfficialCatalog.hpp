@@ -2,6 +2,7 @@
 #include "../metadata/RuntimeMetadata.hpp"
 #include "../managed/ManagedArrays.hpp"
 #include "../unity/ComponentConfig.hpp"
+#include "../presentation/hits/HitGeometry.hpp"
 #include <memory>
 
 namespace hksr::sdk_v1 {
@@ -139,6 +140,10 @@ struct CharacterHitInput {
     ConfigValue<bool> phase_present;
     VisualReactionInput phase;
     std::vector<CatalogIssue> issues;
+    // Base CharacterConfig values. Runtime/context overrides are supplied by
+    // their owner; this catalog does not manufacture battle components.
+    ConfigValue<HitShapeParameters> shape;
+    TextInput hit_box_attach_point;
 };
 struct VisualBehaviorInput {
     std::int32_t source_index=0;

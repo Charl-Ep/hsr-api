@@ -1,5 +1,6 @@
 #pragma once
 #include "../Export.hpp"
+#include "../presentation/hits/HitGeometry.hpp"
 
 namespace hksr::sdk_v1 {
 struct EntityToken;
@@ -27,6 +28,8 @@ public:
     const AnimationControl& Control() const;
     const ProfileInputs& Inputs() const;
     AnimationResources& Resources();
+    Observed<float> ReadHitAngle(Position3 attacker,const HitShapeParameters&,const std::string& attach_point,
+        float horizontal_degrees,float vertical_degrees,ManagedObjects&);
     bool Close();
 private:
     struct State;

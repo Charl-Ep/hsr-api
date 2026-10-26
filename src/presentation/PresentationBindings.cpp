@@ -49,6 +49,9 @@ PresentationBindings ResolvePresentationDeclarations(MethodResolver& metadata,co
     out.world_map=ResolveWorldMapMethods(metadata);
     out.placement=ResolveWorldPlacementMethods(metadata);
     out.actor_control=ResolveActorControlMethods(metadata);
+    out.hit_geometry=ResolveHitGeometryMethods(metadata,fields("RPG.GameCore","TransformComponent"));
+    out.hit_direction=ResolveHitDirectionMethods(metadata);
+    ResolveHitDirectionModel(out.hit_direction,model_fields);
     // Keep per-operation partial results and one readable startup summary.
     auto errors=[&](const auto& group){out.errors.insert(out.errors.end(),group.binding_errors.begin(),group.binding_errors.end());};
     errors(out.entity);errors(out.model);errors(out.admission);errors(out.visual);
@@ -58,6 +61,7 @@ PresentationBindings ResolvePresentationDeclarations(MethodResolver& metadata,co
     errors(out.texture);errors(out.material);errors(out.shader);errors(out.world_map);
     errors(out.placement);
     errors(out.actor_control);
+    errors(out.hit_geometry);errors(out.hit_direction);
     for(const auto* link:{&out.model_loader,&out.loader_model,&out.loader_manager})
         if(!link->available) out.errors.push_back(link->error);
     return out;

@@ -128,6 +128,9 @@ set(HKSR_API_SOURCES
     src/presentation/PresentationIsolation.cpp
     src/presentation/PresentationSources.cpp
 
+    # src/presentation/hits
+    src/presentation/hits/HitGeometry.cpp
+
     # src/presentation/audio
     src/presentation/audio/SoundAccess.cpp
     src/presentation/audio/SoundTracking.cpp
@@ -240,6 +243,7 @@ set(HKSR_API_TEST_SOURCES
     tests/animation/ActionRelationsTests.cpp
     tests/animation/AnimationControlTests.cpp
     tests/animation/HitDirectionTests.cpp
+    tests/presentation/HitGeometryTests.cpp
     tests/animation/AnimationOverridesTests.cpp
     tests/animation/AnimationResourcesTests.cpp
     tests/animation/AnimatorCatalogTests.cpp

@@ -60,6 +60,7 @@ class OfficialCatalog;
 class MouseModeLease;
 struct WorldMapSnapshot;
 struct PlayerPlacement;
+template<class T>struct Observed;
 struct ProfileDescription;
 struct EntityToken;
 struct GameWorld;
@@ -102,6 +103,7 @@ public:
     WorldMapSnapshot ReadMap(const WorldFrame&) const;
     PlayerPlacement ReadPlayerPlacement(const WorldFrame&) const;
     PlayerPlacement ReadEntityPlacement(EntityToken,GameWorld*) const;
+    Observed<Position3> ReadLogicalPosition(EntityToken,GameWorld*) const;
     const std::vector<std::string>& BindingErrors() const;
     // Prepared runtime only. Catalog construction and mouse observation retain
     // the same preparation-thread requirements as their explicit providers.

@@ -5,7 +5,7 @@
 #include "../unity/ComponentConfig.hpp"
 
 namespace hksr::sdk_v1 {
-enum class AnimationComponent { Model, FreeStyle, Emotion, Motion };
+enum class AnimationComponent { Model, FreeStyle, Emotion, Motion, Transform };
 // Per-entity animation input ownership, not playback or a preview policy.
 // All operations run on the owner's official thread/frame. Component results
 // are borrowed current components: callers must recheck model/intent after a

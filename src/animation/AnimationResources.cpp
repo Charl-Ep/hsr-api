@@ -11,7 +11,7 @@ struct AnimationResources::State {
     EntityAccess entities;
     ManagedRoots roots;
     std::vector<ManagedRootId> persistent,temporary;
-    std::array<void*,4> types{};
+    std::array<void*,5> types{};
     unsigned calls=0;
     bool rooted=false,closing=false;
     State(EntityToken token,ReferenceMethods references,EntityAccess access)
@@ -29,7 +29,7 @@ struct AnimationResources::State {
     }
     static std::size_t Index(AnimationComponent kind) {
         const auto index=static_cast<std::size_t>(kind);
-        if(index>=4)throw std::invalid_argument("unknown animation component");
+        if(index>=5)throw std::invalid_argument("unknown animation component");
         return index;
     }
     void Keep(void* object,std::vector<ManagedRootId>& into) {

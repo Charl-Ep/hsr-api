@@ -1,5 +1,6 @@
 #include <hksr/animation/HitDirection.hpp>
 #include <hksr/native/Invocation.hpp>
+#include <hksr/native/MetadataReader.hpp>
 #include <cmath>
 #include <utility>
 
@@ -15,6 +16,28 @@ float RoundEven(float value) {
 }
 }
 HitDirection::HitDirection(HitDirectionMethods methods):methods_(std::move(methods)){}
+Observed<bool> HitDirection::Mirrored(void* model) const {
+    Observed<bool> out;std::uint8_t value=0;
+    if(model && methods_.mirror_available) {
+        out.read.returned=native::CopyMemoryChecked(&value,static_cast<const unsigned char*>(model)+methods_.mirror_offset,sizeof(value));
+        out.value=value!=0;
+    }
+    return out;
+}
+Observed<Position3> HitDirection::WorldDirection(Position3 attacker,Position3 center,float horizontal,float vertical) const {
+    Observed<Position3> out;
+    if(!Finite(attacker) || !Finite(center) || !std::isfinite(horizontal) || !std::isfinite(vertical))return out;
+    Position3 relative{attacker.x-center.x,0,attacker.z-center.z};
+    const auto magnitude=std::sqrt(relative.x*relative.x+relative.z*relative.z);
+    if(!std::isfinite(magnitude))return out;
+    if(magnitude>1.e-5f){relative.x/=magnitude;relative.z/=magnitude;}
+    else relative={};
+    // ResolveDamageDisplayResult supplies this horizontal direction to the
+    // pure official helper. No damage record, RNG or gameplay dispatch is used.
+    out.read=native::Call(methods_.calculate_world,&out.value,relative,horizontal,vertical);
+    if(!Finite(out.value))out.read.returned=false;
+    return out;
+}
 Observed<float> HitDirection::Read(void* transform,Position3 direction,bool mirrored) const {
     Observed<float> out;
     if(!transform || !Finite(direction))return out;
@@ -62,6 +85,18 @@ HitDirectionMethods ResolveHitDirectionMethods(MethodResolver& source) {
     out.rotation=get("Transform","get_rotation_Injected",{"UnityEngine.Quaternion&"},MethodKind::Instance);
     out.look_rotation=get("Quaternion","LookRotation_Injected",{"UnityEngine.Vector3&","UnityEngine.Vector3&","UnityEngine.Quaternion&"},MethodKind::Static);
     out.to_euler=get("Quaternion","Internal_ToEulerRad_Injected",{"UnityEngine.Quaternion&","UnityEngine.Vector3&"},MethodKind::Static);
+    try {out.calculate_world=source.Resolve("RPG.GameCore","AbilityStatic","_CalcHitDir","RPG.MVector3",
+        {"RPG.MVector3","System.Single","System.Single"},MethodKind::Static);}
+    catch(const std::exception& e){out.binding_errors.push_back(std::string("AbilityStatic._CalcHitDir: ")+e.what());}
     return out;
+}
+void ResolveHitDirectionModel(HitDirectionMethods& methods,const std::vector<DeclaredField>& fields) {
+    unsigned count=0;
+    for(const auto& f:fields)if(f.owner_namespace=="RPG.GameCore" && f.owner_name=="CharacterModelComponent" &&
+        f.name=="_ModelFlip" && f.type=="System.Boolean" && f.flags_observed && !(f.flags&0x10)) {
+        ++count;methods.mirror_offset=f.offset;
+    }
+    methods.mirror_available=count==1;
+    if(!methods.mirror_available)methods.binding_errors.push_back("CharacterModelComponent._ModelFlip: missing or ambiguous field");
 }
 }

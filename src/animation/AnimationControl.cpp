@@ -29,6 +29,9 @@ Observed<float> AnimationControl::HitMotionHeight(void* motion) const {
 Observed<int> AnimationControl::ReadyTransitParameter() const {
     Observed<int> out;out.read=native::Call(methods_->ready_parameter_hash,&out.value,static_cast<std::int16_t>(2));return out;
 }
+Observed<int> AnimationControl::HitAngleParameter() const {
+    Observed<int> out;out.read=native::Call(methods_->ready_parameter_hash,&out.value,static_cast<std::int16_t>(1));return out;
+}
 Observed<bool> AnimationControl::HasFloatParameter(void* animator,int hash) const {
     Observed<bool> out;int count=0;
     if(!animator)return out;

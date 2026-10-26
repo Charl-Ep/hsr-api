@@ -2,6 +2,8 @@
 #include "../world/WorldPlacement.hpp"
 #include "../control/ActorControl.hpp"
 #include "../animation/AnimationControl.hpp"
+#include "../animation/HitDirection.hpp"
+#include "hits/HitGeometry.hpp"
 #include "events/AnimationEvents.hpp"
 #include "../animation/AdventureConfig.hpp"
 #include "../model/ArtAdmission.hpp"
@@ -54,6 +56,8 @@ struct PresentationBindings {
     WorldMapMethods world_map;
     WorldPlacementMethods placement;
     ActorControlMethods actor_control;
+    HitGeometryMethods hit_geometry;
+    HitDirectionMethods hit_direction;
     std::vector<std::string> errors;
 };
 // Select from the provider that actually opened this domain, not a Framework

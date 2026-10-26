@@ -220,6 +220,17 @@ PlayerPlacement PresentationContext::ReadEntityPlacement(EntityToken token,GameW
     const auto result=s->placement.ReadEntity(token.entity);
     return Alive(token)?result:missing;
 }
+Observed<Position3> PresentationContext::ReadLogicalPosition(EntityToken token,GameWorld* world) const {
+    auto& s=*storage_->state;
+    if(!world || !Alive(token) || s.owner.OwnedToken(token.entity).generation!=token.generation)return {};
+    const auto entity=s.models->Entities().Read(token.entity);
+    if(!Alive(token) || !entity.owner_world.read.returned || entity.owner_world.value!=world || !entity.loaded.read.returned || !entity.loaded.value)return {};
+    const auto type=s.ComponentType(s.transform_type,"TransformComponent");if(!Alive(token))return {};
+    const auto transform=s.models->Entities().Component(token.entity,type);
+    if(!Alive(token) || !transform.call.returned || !transform.object)return {};
+    const auto position=HitGeometry(s.bindings.hit_geometry).LogicalPosition(transform.object);
+    return Alive(token)?position:Observed<Position3>{};
+}
 std::optional<ActorAnimatorView> PresentationContext::ReadAnimator(EntityToken token) const {
     auto& s=*storage_->state;
     if(!Alive(token))return {};

@@ -75,6 +75,7 @@ public:
     // Current official ready consumer uses BuildInAnimParam value 2 (Int16).
     // Query its hash through the game; never use Animator.speed.
     HKSR_API Observed<int> ReadyTransitParameter() const;
+    HKSR_API Observed<int> HitAngleParameter() const;
     HKSR_API Observed<bool> HasFloatParameter(void* animator,int hash) const;
     HKSR_API Observed<float> FloatParameter(void* animator,int hash) const;
     HKSR_API CallResult SetFloatParameter(void* animator,int hash,float value) const;
