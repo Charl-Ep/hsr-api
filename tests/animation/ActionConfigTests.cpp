@@ -618,7 +618,11 @@ void TestActionConfig() {
         receiver.shape.value.width==.3f && receiver.shape.value.height==1.5f && receiver.shape.value.offset.y==.2f &&
         receiver.hit_box_attach_point.available && receiver.hit_box_attach_point.value=="Fixture_Attachment");
     // Independent scalar failure does not hide a usable phase/name input.
+    Field(hit_character,"VisualRadius","System.Single",1.25f);
+    const auto radius=catalog.ReadCharacterVisualRadius("receiver");
+    Check(radius.available && radius.value==1.25f && radius.value!=receiver.shape.value.width && roots.empty());
     hit_character->fields.clear();
+    Check(!catalog.ReadCharacterVisualRadius("receiver").available && roots.empty());
     auto hit_phase=New();String(hit_phase,"Hit",L"Phase_Hit");
     Field(hit_character,"PhaseAnimConfig","RPG.GameCore.CharacterPhaseAnimConfig",hit_phase);
     receiver=catalog.ReadCharacterHitInput("receiver");

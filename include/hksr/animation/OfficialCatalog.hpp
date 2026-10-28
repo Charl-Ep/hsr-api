@@ -333,6 +333,7 @@ public:
     HitAnimationDefaults ReadHitAnimationDefaults();
     VisualReactionInput ReadDefaultHitNames();
     CharacterHitInput ReadCharacterHitInput(const std::string& character_config);
+    ConfigValue<float> ReadCharacterVisualRadius(const std::string& character_config);
     ConfigValue<HitEffectRules> ReadHitEffectRules(const std::string& path);
     // Named original data, available without constructing a battle or its cache.
     // Prepares private shallow copies with the official per-row function. No

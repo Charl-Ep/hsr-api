@@ -70,6 +70,7 @@ set(HKSR_API_SOURCES
     src/animation/catalog/ReadyCatalog.cpp
     src/animation/catalog/AbilityCatalog.cpp
     src/animation/catalog/HitCatalog.cpp
+    src/animation/catalog/MovementCatalog.cpp
     src/animation/catalog/NpcCatalog.cpp
 
     # src/control
@@ -141,6 +142,7 @@ set(HKSR_API_SOURCES
     src/presentation/audio/SoundManager.cpp
 
     # src/presentation/movement
+    src/presentation/movement/MovementGeometry.cpp
     src/presentation/movement/AnimationMovePlan.cpp
     src/presentation/movement/AnimationMovementData.cpp
     src/presentation/movement/AnimationMovementAccess.cpp

@@ -1,6 +1,8 @@
 #include <hksr/presentation/movement/AnimationMovementData.hpp>
 #include <hksr/presentation/movement/AnimationMovementAccess.hpp>
 #include <hksr/presentation/movement/OwnedMovementRequest.hpp>
+#include <hksr/presentation/movement/MovementGeometry.hpp>
+#include <hksr/metadata/MetadataResolver.hpp>
 #define NOMINMAX
 #include <Windows.h>
 #include <thread>
@@ -132,6 +134,18 @@ void FailureTests() {
     }
 }
 void LayoutTests() {
+    Blob component;
+    Write(&component,48,Position3{1,2,3});
+    MetadataResolver geometry_methods({{"RPG.GameCore","CharacterDataComponent",{
+        {"get_VisualRadius","System.Single",{},false,M(+[](void*,void*)->float{return 1.25f;})}}}});
+    std::vector<DeclaredField> geometry_fields{{"RPG.GameCore","CharacterDataComponent","<LocalOffsetAsMoveTarget>k__BackingField","RPG.MVector3",48,1,true}};
+    const auto geometry=ResolveMovementGeometryAccess(geometry_methods,geometry_fields);
+    const auto geometry_value=geometry.Read(&component);
+    Check(geometry_value.read.returned && geometry_value.value.radius==1.25f && geometry_value.value.local_offset.x==1 &&
+        geometry_value.value.local_offset.y==2 && geometry_value.value.local_offset.z==3,"movement geometry field/read contract");
+    Check(!geometry.Read(nullptr).read.returned,"missing geometry treated as a successful zero input");
+    geometry_fields.front().flags=0x10;
+    Reject([&]{ResolveMovementGeometryAccess(geometry_methods,geometry_fields);});
     std::vector<DeclaredField> data,segment,sample;
     auto add=[](auto& rows,const char* owner,const char* name,const char* type,std::size_t offset) {
         rows.push_back({"",owner,name,type,offset,6,true});

@@ -20,6 +20,8 @@ Service the request on the engine thread. Cancel and drain it before a model han
 
 ## Data
 
+`ReadMovementGeometry` reads an entity's current `CharacterDataComponent` radius and local target offset. It returns no value when that component is absent and never creates one. `OfficialCatalog::ReadCharacterVisualRadius` reads the selected character configuration's base radius. These values are independent of collision bounds.
+
 An `AnimationMovePlan` contains an origin, an Animator state key and ordered segments with resolved world-space endpoints. Each segment supplies normalized start/end times or a speed, an optional exit-time cue and an optional immutable `FloatCurve`.
 
 - `Animation` clock preserves normalized intervals, including values above one.

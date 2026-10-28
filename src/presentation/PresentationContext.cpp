@@ -26,6 +26,7 @@
 #include "events/OwnedAnimationTaskRules.hpp"
 #include "audio/SoundManager.hpp"
 #include <hksr/presentation/movement/OwnedMovementRequest.hpp>
+#include <hksr/presentation/movement/MovementGeometry.hpp>
 #include "movement/MovementHostFactory.hpp"
 #include <hksr/presentation/projectiles/OwnedProjectileGroup.hpp>
 #include <hksr/presentation/events/AnimationEventConstruction.hpp>
@@ -80,6 +81,8 @@ struct PresentationContext::State {
     void* model_type=nullptr;
     void* style_type=nullptr;
     void* transform_type=nullptr;
+    void* character_data_type=nullptr;
+    std::optional<MovementGeometryAccess> movement_geometry;
 
     State(ManagedObjects& input,PresentationBindings value)
         :objects(input),bindings(std::move(value)),resources(bindings),
@@ -289,6 +292,22 @@ void* PresentationContext::NpcMotionComponent(EntityToken token,GameWorld* world
     const auto component=entities.Component(token.entity,type);
     if(!component.call.returned || !component.object || !Alive(token))throw std::runtime_error("own FreeStyle component unavailable");
     return component.object;
+}
+std::optional<MovementGeometry> PresentationContext::ReadMovementGeometry(EntityToken token,GameWorld* world) const {
+    auto& s=*storage_->state;
+    if(!s.metadata || s.effect_control_closed)throw std::logic_error("movement geometry context unavailable");
+    if(!Alive(token))throw std::runtime_error("movement geometry entity ended");
+    const auto state=s.models->Entities().Read(token.entity);
+    if(!state.owner_world.read.returned || state.owner_world.value!=world || !Alive(token))
+        throw std::runtime_error("movement geometry world changed");
+    const auto type=s.ComponentType(s.character_data_type,"CharacterDataComponent");
+    const auto component=s.models->Entities().Component(token.entity,type);
+    if(!component.call.returned || !Alive(token))throw std::runtime_error("movement geometry component unread");
+    if(!component.object)return {};
+    if(!s.movement_geometry)s.movement_geometry=ResolveMovementGeometryAccess(*s.metadata,s.metadata->ReadFields("RPG.GameCore","CharacterDataComponent",false));
+    const auto value=s.movement_geometry->Read(component.object);
+    if(!value.read.returned || !Alive(token))throw std::runtime_error("movement geometry values unread");
+    return value.value;
 }
 const EntityOwner& PresentationContext::Owner() const{return storage_->state->owner;}
 PresentationContext::NpcFactory PresentationContext::Npcs() const {

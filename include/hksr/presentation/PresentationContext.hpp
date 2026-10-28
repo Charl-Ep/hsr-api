@@ -39,6 +39,7 @@ class OwnedProjectileGroup;
 struct ProjectileLaunch;
 struct ProjectileArrival;
 struct AnimationMovePlan;
+struct MovementGeometry;
 class EffectSubmissions;
 struct EffectSubmission;
 struct EffectTriggerExecution;
@@ -104,6 +105,9 @@ public:
     PlayerPlacement ReadPlayerPlacement(const WorldFrame&) const;
     PlayerPlacement ReadEntityPlacement(EntityToken,GameWorld*) const;
     Observed<Position3> ReadLogicalPosition(EntityToken,GameWorld*) const;
+    // No component is created. Nullopt means CharacterData is absent; errors
+    // remain errors rather than an implicit zero-radius fallback.
+    std::optional<MovementGeometry> ReadMovementGeometry(EntityToken,GameWorld*) const;
     const std::vector<std::string>& BindingErrors() const;
     // Prepared runtime only. Catalog construction and mouse observation retain
     // the same preparation-thread requirements as their explicit providers.
