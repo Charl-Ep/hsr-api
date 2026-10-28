@@ -473,6 +473,7 @@ std::optional<EffectRequestServices> PresentationContext::Effects() const {
                 s->bindings.references,s->resources.Arrays(),s->resources.Components());
             return s->effect_catalog->ReadHitEffectRules(path);
         },[s](EffectReference ref,void* caster,void* path){return s->HitEffects().Matches(ref,caster,path);
+        },[s](void* parameters,bool enabled){return s->effect_inputs->ConfigureReplay(parameters,enabled);
         }};
 }
 std::shared_ptr<const PresentationEffects> PresentationContext::EffectServices() const {

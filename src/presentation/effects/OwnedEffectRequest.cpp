@@ -150,6 +150,14 @@ void OwnedEffectRequest::StartSpatial(void* caster,void* path,const SpatialEffec
     const auto captured=options;
     StartImpl(caster,nullptr,path,nullptr,&captured);
 }
+void OwnedEffectRequest::StartEntity(void* caster,void* target,void* path,const EntityEffectOptions& options,const EffectSubmissionOptions& submission) {
+    const auto captured=options;const auto mode=submission;
+    StartImpl(caster,target,path,&captured,nullptr,nullptr,nullptr,&mode);
+}
+void OwnedEffectRequest::StartSpatial(void* caster,void* path,const SpatialEffectOptions& options,const EffectSubmissionOptions& submission) {
+    const auto captured=options;const auto mode=submission;
+    StartImpl(caster,nullptr,path,nullptr,&captured,nullptr,nullptr,&mode);
+}
 void OwnedEffectRequest::StartImpact(void* caster,void* target,void* path,const ImpactEffectOptions& options) {
     const auto captured=options;StartImpl(caster,target,path,nullptr,nullptr,&captured);
 }
@@ -167,10 +175,14 @@ EffectControlResult OwnedEffectRequest::UpdateHit(const HitEffectPlacement& plac
     s.ReadSignals();return result;
 }
 EffectControlResult OwnedEffectRequest::ReplayHit(EffectMutexKind kind) {
+    if(!state_->hit)return {EffectControlState::Ended,{},true,"not a hit request"};
+    return Replay(kind);
+}
+EffectControlResult OwnedEffectRequest::Replay(EffectMutexKind kind) {
     auto& s=*state_;
-    if(!s.hit || s.busy || !s.status.submitted || s.status.cancelled || s.status.closed || s.status.request_ended)
-        return {EffectControlState::Ended,{},true,"hit request unavailable for replay"};
-    if(!s.services.replay_hit)return {EffectControlState::Unsupported,{},true,"hit replay unavailable"};
+    if(s.busy || !s.status.submitted || s.status.cancelled || s.status.closed || s.status.request_ended)
+        return {EffectControlState::Ended,{},true,"effect request unavailable for replay"};
+    if(!s.services.replay_hit)return {EffectControlState::Unsupported,{},true,"effect replay unavailable"};
     s.busy=true;struct Exit{bool& value;~Exit(){value=false;}} exit{s.busy};
     return s.services.replay_hit(s.status.reference,kind);
 }
@@ -179,7 +191,7 @@ Observed<bool> OwnedEffectRequest::MatchesHitPath(void* caster,void* path) const
     if(!s.hit || s.busy || !s.status.submitted || s.status.cancelled || s.status.closed || s.status.request_ended)return {false,{true,0}};
     return s.services.match_hit?s.services.match_hit(s.status.reference,caster,path):Observed<bool>{};
 }
-void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const EntityEffectOptions* options,const SpatialEffectOptions* spatial,const ImpactEffectOptions* impact,const HitEffectPlacement* hit) {
+void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const EntityEffectOptions* options,const SpatialEffectOptions* spatial,const ImpactEffectOptions* impact,const HitEffectPlacement* hit,const EffectSubmissionOptions* submission) {
     auto& s=*state_;auto& out=s.status;
     if(out.started)throw std::logic_error("effect request already started");
     out.started=true;
@@ -198,7 +210,8 @@ void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const En
         const auto service=s.services.manager();
         if(!service.call.returned || !service.object)throw std::runtime_error("current effect manager unavailable");
         s.Keep(service.object);s.manager=service.object;
-        const auto mapped=s.services.access.MapPath(entity,path);
+        const auto path_mode=submission?submission->path_mode:EffectPathMode::MapCaster;
+        const auto mapped=path_mode==EffectPathMode::Resolved?ObjectResult{{true,0},path}:s.services.access.MapPath(entity,path);
         if(!mapped.call.returned || !mapped.object)throw std::runtime_error("effect path mapping failed");
         s.Keep(mapped.object);
         const auto acquired=s.services.access.Acquire(mapped.object);
@@ -222,6 +235,9 @@ void OwnedEffectRequest::StartImpl(void* entity,void* target,void* path,const En
             s.services.configure(out.reference.parameters,entity,callback.object);
         s.Trace("configure target="+std::to_string(configured.target.returned)+" callback="+std::to_string(configured.completion.returned));
         if(!configured.target.returned || !configured.completion.returned)throw std::runtime_error("effect request configuration incomplete");
+        if(submission && submission->enable_replay &&
+            (!s.services.configure_replay || !s.services.configure_replay(out.reference.parameters,true).returned))
+            throw std::runtime_error("effect replay input configuration failed");
         if(out.cancelled){s.ReleaseUnsubmitted();}
         else {
             if(s.services.observe_request) {

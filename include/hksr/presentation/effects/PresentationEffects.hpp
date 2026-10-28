@@ -31,6 +31,9 @@ public:
     std::unique_ptr<EventRegistrationLease> RegisterExit(EntityToken,const std::string& state,
         const std::vector<EffectRemovalSource>&) const;
     void Trace(const std::string&) const;
+    // Unrooted mapped path. Retain it before further managed calls; use
+    // EffectPathMode::Resolved to submit that same path after admission checks.
+    ObjectResult MapPath(void* caster,void* rooted_path) const;
     // Read-only official mutex queries; candidates restrict subsequent replay
     // to already-owned receipts. Callers retain entity/path through this call.
     // Non-null caster maps the path as the source AttackData check does. The

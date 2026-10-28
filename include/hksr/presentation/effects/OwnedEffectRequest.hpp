@@ -32,6 +32,7 @@ struct EffectRequestServices {
     std::function<EffectMutexDecision(void*,void*,void*,const EffectMutexRule&,float,const std::vector<EffectReference>&)> hit_mutex;
     std::function<ConfigValue<HitEffectRules>(const std::string&)> hit_rules;
     std::function<Observed<bool>(EffectReference,void*,void*)> match_hit;
+    std::function<CallResult(void*,bool)> configure_replay;
 };
 struct EffectRequestStatus {
     api::EffectReference reference;
@@ -59,10 +60,15 @@ public:
     void Start(void* entity,void* path);
     void StartEntity(void* caster,void* target,void* path,const EntityEffectOptions&);
     void StartSpatial(void* caster,void* path,const SpatialEffectOptions&);
+    void StartEntity(void* caster,void* target,void* path,const EntityEffectOptions&,const EffectSubmissionOptions&);
+    void StartSpatial(void* caster,void* path,const SpatialEffectOptions&,const EffectSubmissionOptions&);
     void StartImpact(void* caster,void* target,void* path,const ImpactEffectOptions&);
     void StartHit(void* caster,void* target,void* path,const HitEffectPlacement&);
     EffectControlResult UpdateHit(const HitEffectPlacement&);
     EffectControlResult ReplayHit(EffectMutexKind);
+    // Replay only this retained receipt, using the official behavior and its
+    // replay flags. Does not acquire, submit or transfer another request.
+    EffectControlResult Replay(EffectMutexKind);
     Observed<bool> MatchesHitPath(void* caster,void* path) const;
     // Track a receipt captured at an official submission boundary. The caller
     // must establish ownership and retain both inputs through this call.
@@ -77,7 +83,7 @@ public:
     void Service();
     const EffectRequestStatus& Status() const;
 private:
-    void StartImpl(void* caster,void* target,void* path,const EntityEffectOptions*,const SpatialEffectOptions* = nullptr,const ImpactEffectOptions* = nullptr,const HitEffectPlacement* = nullptr);
+    void StartImpl(void* caster,void* target,void* path,const EntityEffectOptions*,const SpatialEffectOptions* = nullptr,const ImpactEffectOptions* = nullptr,const HitEffectPlacement* = nullptr,const EffectSubmissionOptions* = nullptr);
     struct State;State* state_;
 };
 }

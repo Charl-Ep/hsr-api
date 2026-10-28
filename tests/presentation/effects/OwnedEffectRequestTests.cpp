@@ -71,6 +71,44 @@ void Reset() {
 void TestOwnedEffectRequest() {
     Reset();
     {
+        auto services=Services();unsigned replayed=0,configured=0;
+        services.configure_replay=[&](void* parameters,bool enabled) {
+            Check(parameters==&first && enabled && submits==0);++configured;return CallResult{true,0};
+        };
+        services.replay_hit=[&](EffectReference ref,EffectMutexKind kind) {
+            Check(ref.parameters==&first && ref.id==first.id && kind==EffectMutexKind::FadeOut);++replayed;
+            return EffectControlResult{EffectControlState::Applied,{true,0},true,{}};
+        };
+        PresentationEffects factory(services,{},[](void* raw,void* caster,void* target,void* callback,const EntityEffectOptions&) {
+            Check(caster==&entity && target==&recipient);
+            auto* p=static_cast<Params*>(raw);p->target=target;p->callback=callback;return EffectInputResult{{true,0},{true,0}};
+        });
+        Check(factory.MapPath(&entity,&path).object==&mapped);
+        auto request=factory.CreateRequest();expected_target=&recipient;
+        EntityEffectOptions options;EffectSubmissionOptions submission{EffectPathMode::Resolved,true};
+        // Map asserts if handed an already mapped path. A second mapping would
+        // fail the request before submission, not accidentally pass this test.
+        request->StartEntity(&entity,&recipient,&mapped,options,submission);
+        Check(request->Status().submitted && request->Status().submit.returned && submits==1 && configured==1);
+        Check(request->Replay(EffectMutexKind::FadeOut).state==EffectControlState::Applied && replayed==1 && submits==1);
+        Check(request->ReplayHit(EffectMutexKind::FadeOut).state==EffectControlState::Ended && replayed==1);
+        request->Cancel();Check(request->Replay(EffectMutexKind::FadeOut).state==EffectControlState::Ended && replayed==1);
+        release_on_remove=true;request->Service();Check(request->Status().closed && roots.empty());
+    }
+    Reset();
+    {
+        auto services=Services();services.configure_spatial=[](void* raw,void*,void* callback,const SpatialEffectOptions&) {
+            auto* p=static_cast<Params*>(raw);
+            p->target=nullptr;p->callback=callback;return EffectInputResult{{true,0},{true,0}};
+        };
+        OwnedEffectRequest request(services);expected_target=nullptr;
+        SpatialEffectOptions options;
+        request.StartSpatial(&entity,&mapped,options,{EffectPathMode::Resolved,false});
+        Check(request.Status().submitted && request.Status().submit.returned && submits==1);
+        request.Cancel();release_on_remove=true;request.Service();Check(request.Status().closed && roots.empty());
+    }
+    Reset();
+    {
         auto services=Services();int aligned=0,updated=0;Position3 seen;
         services.configure_hit=[&](void* raw,void* caster,void* target,void* callback,const HitEffectPlacement& p) {
             Check(caster==&entity && target==&recipient && p.offset.x==2 && p.delay==.3f);

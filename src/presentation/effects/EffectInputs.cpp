@@ -49,7 +49,7 @@ struct EffectInputs::State {
         for(const auto& item:std::vector<std::pair<const char*,const char*>>{
             {"PositionOffset","System.Nullable<UnityEngine.Vector3>"},{"RotationOffset","System.Nullable<UnityEngine.Vector3>"},
             {"CustomScale","System.Nullable<UnityEngine.Vector3>"},{"IsNeedFadeIn","System.Boolean"},
-            {"ForceSimulateImmediately","System.Boolean"},{"ParamEntityUsage","RPG.GameCore.EffectParamEntityUsage"},
+            {"ForceSimulateImmediately","System.Boolean"},{"IsEnableReplay","System.Boolean"},{"ParamEntityUsage","RPG.GameCore.EffectParamEntityUsage"},
             {"TowardMaxPitchAngle","System.Single"}}) {
             const DeclaredField* field=nullptr;
             for(const auto& value:declared)if(value.owner_namespace=="RPG.Client" && value.owner_name=="TriggerEffectParams" && value.name==item.first) {
@@ -121,6 +121,12 @@ ObjectResult EffectInputs::Manager() {
     if(state_->closed)return {};
     const auto field=state_->Get("GlobalVars","s_MonoEffectManager",true);
     ObjectResult out;out.call=native::Call(field.call,&out.object,field.object,static_cast<void*>(nullptr));return out;
+}
+CallResult EffectInputs::ConfigureReplay(void* parameters,bool enabled) {
+    if(state_->closed || !parameters)return {};
+    state_->PrepareEntity(parameters);
+    state_->Scalar(parameters,"IsEnableReplay",static_cast<std::uint8_t>(enabled));
+    return {true,0};
 }
 EffectInputResult EffectInputs::Configure(void* parameters,void* target,void* completion) {
     EffectInputResult out;if(state_->closed || !parameters || !target || !completion)return out;
@@ -240,6 +246,7 @@ EffectInputResult EffectInputs::ConfigureImpl(void* parameters,void* caster,void
             s.Scalar(parameters,"PositionOffset",position);s.Scalar(parameters,"RotationOffset",rotation);s.Scalar(parameters,"CustomScale",scale);
             s.Scalar(parameters,"IsNeedFadeIn",static_cast<std::uint8_t>(options.fade_in));
             s.Scalar(parameters,"ForceSimulateImmediately",static_cast<std::uint8_t>(options.simulate_immediately));
+            s.Scalar(parameters,"IsEnableReplay",std::uint8_t{0});
             // Original task default is LookAt. ParamEntity stays null: no
             // toward evaluator or corresponding completion processing implied.
             s.Scalar(parameters,"ParamEntityUsage",std::int32_t{1});

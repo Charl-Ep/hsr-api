@@ -25,6 +25,9 @@ std::unique_ptr<EventRegistrationLease> PresentationEffects::RegisterExit(Entity
 void PresentationEffects::Trace(const std::string& text) const {
     if(state_->services.trace)state_->services.trace(text);
 }
+ObjectResult PresentationEffects::MapPath(void* caster,void* path) const {
+    return state_->services.access.MapPath(caster,path);
+}
 EffectMutexDecision PresentationEffects::HitMutex(void* caster,void* target,void* path,const EffectMutexRule& rule,float delay,
     const std::vector<EffectReference>& candidates) const {
     if(!state_->services.hit_mutex)throw std::runtime_error("hit effect mutex service unavailable");

@@ -2,6 +2,15 @@
 
 Engine operations and cleanup run on the owning official frame unless marked as preparation work.
 
+`PresentationEffects::MapPath` returns an unrooted caster-mapped path. Retain it
+before another managed call. Pass `EffectSubmissionOptions` with `path_mode` set
+to `EffectPathMode::Resolved` to the extended `StartEntity` or `StartSpatial`
+overload when submitting that path after resource or mutex queries. The default
+maps through the caster. `enable_replay` controls the new request's replay flag.
+`OwnedEffectRequest::Replay`
+uses the retained receipt and official replay behavior; it neither submits a new
+request nor adopts a foreign effect.
+
 ## Context
 
 Call `PresentationContext::Create(metadata, capabilities, policy, trace)` from `RuntimeClient::Prepare`. Keep the metadata/object providers and callback targets alive through all derived operations.

@@ -7,6 +7,11 @@
 
 namespace hksr::sdk_v1 {
 struct EffectInputResult {CallResult target,completion;};
+enum class EffectPathMode { MapCaster, Resolved };
+struct EffectSubmissionOptions {
+    EffectPathMode path_mode=EffectPathMode::MapCaster;
+    bool enable_replay=false;
+};
 // Entity-relative visual inputs. Path mapping uses the explicit caster. This
 // is not a TriggerEffect interpreter: no target evaluator, mutex lookup,
 // loading hide, Timeline attachment or post-load subobject modifications.
@@ -45,6 +50,7 @@ public:
     EffectInputs(const EffectInputs&)=delete;
     EffectInputs& operator=(const EffectInputs&)=delete;
     ObjectResult Manager(); // unrooted result, read current global each time
+    CallResult ConfigureReplay(void* retained_parameters,bool enabled);
     EffectInputResult Configure(void* retained_parameters,void* retained_target,void* retained_completion);
     EffectInputResult ConfigureHitReferences(void* retained_parameters,void* retained_caster,
         void* retained_target,void* retained_completion);

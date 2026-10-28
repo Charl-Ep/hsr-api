@@ -19,7 +19,7 @@ struct Parameters {
     void* target=nullptr;void* completion=nullptr;void* caster=nullptr;void* name=nullptr;void* attach=nullptr;
     NullableVector offset,rotation,scale;std::uint8_t fade=0,simulate=0;std::int32_t usage=0;bool attached=false;float pitch=0;
     NullableVector initial,anchor;NullableRotation orientation;std::uint8_t ignore_prefab=0;
-    void* flags=nullptr;void* param=nullptr;
+    void* flags=nullptr;void* param=nullptr;std::uint8_t replay=0;
 } parameters;
 std::map<int,void*> roots;std::vector<std::unique_ptr<std::string>> texts;
 bool fail_callback=false;
@@ -88,6 +88,7 @@ struct Inputs:MethodResolver,ObjectMetadata,ManagedObjects {
             field("CustomScale","System.Nullable<UnityEngine.Vector3>",offsetof(Parameters,scale)),
             field("IsNeedFadeIn","System.Boolean",offsetof(Parameters,fade)),
             field("ForceSimulateImmediately","System.Boolean",offsetof(Parameters,simulate)),
+            field("IsEnableReplay","System.Boolean",offsetof(Parameters,replay)),
             field("ParamEntityUsage","RPG.GameCore.EffectParamEntityUsage",offsetof(Parameters,usage)),
             field("TowardMaxPitchAngle","System.Single",offsetof(Parameters,pitch)),
             field("InitPosition","System.Nullable<UnityEngine.Vector3>",offsetof(Parameters,initial)),
@@ -122,12 +123,13 @@ void TestEffectInputs() {
     Check(full.target.returned && full.completion.returned && parameters.caster==&entity && parameters.target==&other_target);
     Check(*static_cast<std::string*>(parameters.name)=="scene" && parameters.offset.present && parameters.offset.value.z==3);
     Check(parameters.rotation.present && parameters.rotation.value.y==90 && parameters.scale.present && parameters.scale.value.x==2);
-    Check(parameters.fade==1 && parameters.simulate==1 && parameters.usage==1 && parameters.attached && parameters.pitch==90);
+    Check(parameters.fade==1 && parameters.simulate==1 && parameters.replay==0 && parameters.usage==1 && parameters.attached && parameters.pitch==90);
+    Check(inputs.ConfigureReplay(&parameters,true).returned && parameters.replay==1);
     Check(parameters.attach && *static_cast<std::string*>(parameters.attach)=="Muzzle");
     Check(parameters.flags==&flag_array && flag_writes==1);
     const auto persistent_roots=roots.size();options.scale.reset();options.attach_to_target=false;
     Check(inputs.ConfigureEntity(&parameters,&entity,&other_target,&callback,options).completion.returned);
-    Check(!parameters.scale.present && !parameters.attached && roots.size()==persistent_roots);
+    Check(!parameters.scale.present && !parameters.attached && !parameters.replay && roots.size()==persistent_roots);
     Check(parameters.attach && *static_cast<std::string*>(parameters.attach)=="Muzzle"); // initial point without parenting
     options.attach_point.clear();options.resident=false;Check(inputs.ConfigureEntity(&parameters,&entity,&other_target,&callback,options).completion.returned);
     Check(!parameters.attach && roots.size()==persistent_roots);
@@ -143,7 +145,8 @@ void TestEffectInputs() {
     SpatialEffectOptions spatial;spatial.position={7,-2,59};spatial.rotation={0,2,0,0};
     spatial.unique_name="world";spatial.fade_in=false;spatial.simulate_immediately=true;spatial.resident=true;
     const auto placed=inputs.ConfigureSpatial(&parameters,&entity,&callback,spatial);
-    Check(placed.target.returned && placed.completion.returned && !parameters.target && parameters.caster==&entity);
+    Check(placed.target.returned && placed.completion.returned && !parameters.target && parameters.caster==&entity && parameters.replay==0);
+    Check(inputs.ConfigureReplay(&parameters,true).returned && parameters.replay==1);
     Check(parameters.initial.present && parameters.initial.value.z==59 && parameters.anchor.present && parameters.anchor.value.y==-2);
     Check(parameters.orientation.present && parameters.orientation.value.y==1 && parameters.orientation.value.w==0);
     Check(parameters.ignore_prefab && !parameters.attached && !parameters.attach && !parameters.offset.present && !parameters.rotation.present);
