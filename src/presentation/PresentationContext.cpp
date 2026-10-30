@@ -73,6 +73,7 @@ struct PresentationContext::State {
     EffectCompletionAllocation completion;
     std::unique_ptr<detail::SoundManager> sounds;
     std::optional<MovementRequestServices> movements;
+    std::optional<AnimationMovementAccessBinding> movement_access;
     std::unique_ptr<detail::MovementHostFactory> movement_hosts;
     std::vector<std::unique_ptr<AnimationExitConfig>> exit_inputs;
     ManagedRoots roots;
@@ -589,7 +590,8 @@ std::unique_ptr<OwnedMovementRequest> PresentationContext::StartMovement(EntityT
     const auto source=[s,token,world]{return s->MovementModel(token,world);};
     if(!s->movements) {
         MovementRequestServices value;value.data=ResolveAnimationMoveData460(*s->metadata);
-        value.access=ResolveAnimationMovementAccess460(*s->metadata);value.update=ResolveAnimationMovementUpdate460(*s->metadata);
+        if(!s->movement_access)s->movement_access=ResolveAnimationMovementAccess460(*s->metadata);
+        value.access=*s->movement_access;value.update=ResolveAnimationMovementUpdate460(*s->metadata);
         value.lifecycle=&TrackedEntities();s->movements=std::move(value);
     }
     const auto model=source();
@@ -634,6 +636,27 @@ std::unique_ptr<OwnedMovementRequest> PresentationContext::StartMovement(EntityT
         auto request=std::make_unique<OwnedMovementRequest>(std::move(services),token,component);
         request->Start(plan);release();return request;
     }catch(...){release();throw;}
+}
+std::unique_ptr<OwnedMovementRequest> PresentationContext::StartPosition(EntityToken token,GameWorld* world,Position3 position) const {
+    const auto s=storage_->state;
+    if(!s->metadata || s->effect_control_closed)throw std::logic_error("movement context unavailable");
+    const auto model=s->MovementModel(token,world);
+    if(!model.animator)throw std::runtime_error("positioning requires this client's current owned model");
+    MovementRequestServices services;
+    services.data.references=s->bindings.references;
+    if(!s->movement_access)s->movement_access=ResolveAnimationMovementAccess460(*s->metadata);
+    services.access=*s->movement_access;
+    services.lifecycle=&TrackedEntities();services.model_objects={model.component,model.animator,model.controller};
+    services.alive=[token]{return Alive(token);};
+    services.current=[s,token,world,model]{const auto now=s->MovementModel(token,world);
+        return now.component==model.component && now.animator==model.animator && now.controller==model.controller;};
+    auto host=AcquireMovementHost(token,world);
+    if(!host->Status().prepared)throw std::runtime_error(host->Status().error);
+    services.host=host;
+    try {
+        auto request=std::make_unique<OwnedMovementRequest>(std::move(services),token,host->Component());
+        request->StartPosition(position);return request;
+    }catch(...){host->Close();throw;}
 }
 TextResult PresentationContext::ReadEffectTriggerPath(const EffectTriggerExecution& trigger) const {
     auto& s=*storage_->state;

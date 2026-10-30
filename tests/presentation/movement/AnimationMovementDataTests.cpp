@@ -32,7 +32,8 @@ struct Fixture {
     std::map<int,void*> roots;
     std::map<void*,std::vector<void*>> lists;
     int next=0,allocations=0,retains=0,fail_retain_at=0,free_calls=0,fail_free=0;
-    int ctor_calls=0,adds=0,submits=0,clears=0;
+    int ctor_calls=0,adds=0,submits=0,clears=0,positions=0;
+    Position3 position;
     bool retire_on_submit=false,current=true,finish_on_submit=false;
     bool evaluate_on_submit=false,fail_clear=false;
     bool alias=false;void* first=nullptr;
@@ -184,6 +185,10 @@ void __fastcall Submit(void* component,void* data,void*) {
     if(fixture->retire_on_submit)fixture->current=false;
     if(fixture->evaluate_on_submit){Position3 result;Evaluate(component,0,&result,&method_marker);}
 }
+void __fastcall Position(void*,Position3 value,void*) {
+    ++fixture->positions;fixture->position=value;
+    if(fixture->retire_on_submit)fixture->current=false;
+}
 void __fastcall Clear(void* component,void*) {
     ++fixture->clears;
     if(fixture->fail_clear)throw std::runtime_error("failed clear");
@@ -210,7 +215,7 @@ bool FaultedEvaluation(void* component) {
     __try{Evaluate(component,0,&out,&method_marker);return false;}
     __except(GetExceptionCode()==0xE0670007?EXCEPTION_EXECUTE_HANDLER:EXCEPTION_CONTINUE_SEARCH){return true;}
 }
-AnimationMovementAccess Access(int& actor){auto b=access_layout;b.submit=M(Submit);b.clear=M(Clear);return {b,reinterpret_cast<GameEntity*>(&actor)};}
+AnimationMovementAccess Access(int& actor){auto b=access_layout;b.submit=M(Submit);b.clear=M(Clear);b.position=M(Position);return {b,reinterpret_cast<GameEntity*>(&actor)};}
 void* Component(Blob& blob,int& actor,int& transform,int& animator) {
     auto* p=blob.data.data();Write(p,16,static_cast<void*>(&actor));Write(p,24,static_cast<void*>(&transform));Write(p,32,static_cast<void*>(&animator));return p;
 }
@@ -218,11 +223,15 @@ void AccessTests() {
     Fixture f;AnimationMovementData a(Services(f)),b(Services(f));Check(a.Prepare(Input())&&b.Prepare(Input()),"access data fixture");
     Blob blob;int actor=1,transform=2,animator=3,foreign=4;auto* component=Component(blob,actor,transform,animator);
     const auto access=Access(actor);auto current=[&]{return f.current;};
+    Check(access.Position(component,{3,4,5},current).state==MovementWriteState::Detached && f.positions==1 && f.position.y==4,"instant position ABI");
+    Check(!access.Position(component,{0,std::numeric_limits<float>::quiet_NaN(),0},current).attempted,"nonfinite position submitted");
     Write(component,access_layout.owner,static_cast<void*>(&foreign));
+    Check(!access.Position(component,{},current).attempted && f.positions==1,"foreign instant position");
     Check(!access.Submit(component,a,current).attempted&&!access.Interrupt(component,a,current).attempted&&f.submits==0&&f.clears==0,"foreign component owner touched");
     Write(component,access_layout.owner,static_cast<void*>(&actor));
     f.current=false;Check(!access.Submit(component,a,current).attempted&&f.submits==0,"ineligible owner written");f.current=true;
     Write(component,access_layout.other_motion,static_cast<void*>(&foreign));
+    Check(!access.Position(component,{},current).attempted && f.positions==1,"instant position cleared foreign motion");
     Check(!access.Submit(component,a,current).attempted&&f.submits==0&&Read<void*>(component,40)==&foreign,"other channel cleared by eligibility check");
     Write(component,access_layout.other_motion,static_cast<void*>(nullptr));Write(component,access_layout.data,b.Object());
     Check(!access.Submit(component,a,current).attempted&&f.submits==0,"same-key foreign FGNN replaced");
@@ -253,11 +262,16 @@ void AccessTests() {
 void RequestTests() {
     Fixture f;Blob blob;int actor=1,transform=2,animator=3;auto* component=Component(blob,actor,transform,animator);
     EntityLifecycle lifecycle;auto token=lifecycle.Track(reinterpret_cast<GameEntity*>(&actor));
-    auto make=[&](std::shared_ptr<OwnedMovementHost> host={}) {
+    auto make=[&](std::shared_ptr<OwnedMovementHost> host={},bool instant_only=false) {
         MovementRequestServices s;s.data=Services(f);s.access=access_layout;s.access.submit=M(Submit);s.access.clear=M(Clear);s.update=M(Evaluate);
+        s.access.position=M(Position);
         s.lifecycle=&lifecycle;s.current=[&]{return f.current && !lifecycle.IsRetiring(token);};
         s.alive=[&]{return lifecycle.Current(token.entity).generation==token.generation && !lifecycle.IsDisposed(token);};
         s.host=std::move(host);
+        if(instant_only) {
+            const auto references=s.data.references;s.data={};s.data.references=references;
+            s.update={};s.access.submit={};s.access.clear={};
+        }
         return std::make_unique<OwnedMovementRequest>(s,token,component);
     };
     auto tick=[&](Evaluation next) {
@@ -356,6 +370,15 @@ void RequestTests() {
         cancelled->Cancel();cancelled->Service();Check(cancelled->Status().closed && f.submits==before && root && callback,"pending cancel submitted movement");
         auto handoff=make(host());handoff->Start(Input());f.current=false;handoff->Service();f.current=true;
         Check(handoff->Status().closed && root && callback && f.submits==before,"pending model handoff did not restore");
+        const auto allocated=f.allocations,positions=f.positions;
+        auto instant=make(host(),true);instant->StartPosition({6,7,8});
+        Check(instant->Status().waiting_for_host && f.positions==positions,"instant request bypassed ordinary motion");
+        pending=false;instant->Service();
+        Check(instant->Status().accepted && instant->Status().completed && instant->Status().closed && root && callback &&
+            f.positions==positions+1 && f.position.z==8 && f.allocations==allocated,"instant move allocated graph or left lease open");
+        instant->Service();instant->Cancel();Check(f.positions==positions+1,"instant call replayed");
+        pending=true;auto cancelled_position=make(host(),true);cancelled_position->StartPosition({});cancelled_position->Cancel();cancelled_position->Service();
+        Check(cancelled_position->Status().closed && !cancelled_position->Status().completed && f.positions==positions+1 && root && callback,"cancelled position applied");
         auto retired=make(host());retired->Start(Input());const auto notice=lifecycle.DisposalStarting(token);
         Check(notice.invoked==1 && retired->Status().closed && root && callback,"pending retirement did not drain");
     }

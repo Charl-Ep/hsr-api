@@ -67,7 +67,8 @@ AnimationMovementAccessBinding ResolveAnimationMovementAccess460(MethodResolver&
         methods.Resolve("","BGOBCKLPEMK","HMNPNOIKFFH","System.Void",{}),owner,
         f("KILJAPEKFAJ","RPG.GameCore.TransformComponent"),f("CMGGMAGPMEA","IBEJMEEEJMB"),f("MIHFBGNKBJA","AKDDNBHNGON"),
         f("PGALAIJOICA","FGNNHFLGJBK"),f("<IsAttachMotionWithEffect>k__BackingField","System.Boolean"),
-        f("MFKFCJBNHEK","System.Boolean"),f("JDKEKGODFLL","System.Int32"),graph};
+        f("MFKFCJBNHEK","System.Boolean"),f("JDKEKGODFLL","System.Int32"),graph,
+        methods.Resolve("","BGOBCKLPEMK","CGKHLCOPDIF","System.Void",{"RPG.MVector3"})};
 }
 AnimationMovementAccessBinding ResolveAnimationMovementAccess460(RuntimeMetadata& metadata) {
     if(metadata.Version()!=RuntimeVersion::Hsr460)throw std::invalid_argument("animation movement access qualified for HSR 4.6");

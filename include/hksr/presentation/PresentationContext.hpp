@@ -163,6 +163,7 @@ public:
     // does not play the animation. Cancel/drain before changing the model.
     std::unique_ptr<OwnedMovementRequest> StartMovement(EntityToken,GameWorld*,
         const std::string& state,AnimationMovePlan) const;
+    std::unique_ptr<OwnedMovementRequest> StartPosition(EntityToken,GameWorld*,Position3) const;
     // Exclusive animation/effect movement on an owned actor. A host may be
     // waiting for already-submitted Adventure motion; check Ready before use.
     // Close after detaching all request-owned motion, before model handoff.

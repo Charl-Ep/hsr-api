@@ -20,6 +20,8 @@ Service the request on the engine thread. Cancel and drain it before a model han
 
 ## Data
 
+`PresentationContext::StartPosition` applies a resolved world point through the official movement component. It returns the same serviced request type and uses the exclusive motion lease, but creates no animation graph or state-key dependency. Pending Adventure movement drains before submission. A successful call reports `completed`; cancellation before submission performs no positioning. The call updates the game's TransformComponent rather than a Unity Transform directly.
+
 `ReadMovementGeometry` reads an entity's current `CharacterDataComponent` radius and local target offset. It returns no value when that component is absent and never creates one. `OfficialCatalog::ReadCharacterVisualRadius` reads the selected character configuration's base radius. These values are independent of collision bounds.
 
 An `AnimationMovePlan` contains an origin, an Animator state key and ordered segments with resolved world-space endpoints. Each segment supplies normalized start/end times or a speed, an optional exit-time cue and an optional immutable `FloatCurve`.

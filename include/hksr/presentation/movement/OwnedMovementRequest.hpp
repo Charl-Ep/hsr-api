@@ -25,7 +25,7 @@ struct MovementRequestStatus {
     MovementWriteResult submission,interruption;
     std::string error;
 };
-// One private animation-driven movement on an owned entity. Retains graph and
+// One private animated or instant movement on an owned entity. Retains graph and
 // component through native evaluation; cancels at entity pre-disposal. Model
 // handoff callers cancel and drain before replacing the model. Service detects
 // unexpected model changes and clears only this graph, never a successor.
@@ -36,10 +36,12 @@ public:
     OwnedMovementRequest(const OwnedMovementRequest&)=delete;
     OwnedMovementRequest& operator=(const OwnedMovementRequest&)=delete;
     HKSR_API void Start(const AnimationMovePlan&);
+    HKSR_API void StartPosition(Position3);
     HKSR_API void Cancel(); // data-only; Service performs the scoped clear
     HKSR_API void Service();
     HKSR_API const MovementRequestStatus& Status() const;
 private:
     struct State;std::shared_ptr<State> state_;
+    void Begin();
 };
 }

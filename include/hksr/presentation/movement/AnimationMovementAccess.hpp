@@ -6,6 +6,7 @@ struct AnimationMovementAccessBinding {
     Method submit,clear;
     std::size_t owner=0,transform=0,animator_source=0,other_motion=0,data=0,attached=0,active=0,index=0;
     AnimationMoveDataLayout graph;
+    Method position;
 };
 HKSR_API AnimationMovementAccessBinding ResolveAnimationMovementAccess460(RuntimeMetadata&);
 HKSR_API AnimationMovementAccessBinding ResolveAnimationMovementAccess460(MethodResolver&,
@@ -40,6 +41,8 @@ public:
     HKSR_API AnimationMovementObservation Observe(void* component) const;
     HKSR_API AnimationMoveClockObservation Clock(const AnimationMovementData&) const;
     HKSR_API MovementWriteResult Submit(void* component,const AnimationMovementData&,
+        const std::function<bool()>& current) const;
+    HKSR_API MovementWriteResult Position(void* component,Position3,
         const std::function<bool()>& current) const;
     // Only clears this exact graph, leaves position and other motion unchanged.
     // This path is for the explicit-endpoint (mode 0) data built above; it does
