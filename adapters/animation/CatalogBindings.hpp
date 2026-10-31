@@ -18,6 +18,8 @@ inline constexpr auto npc_motions="AJKNMKCMKHB";
 inline constexpr auto motion_names="KCPFICBNOMD";
 inline constexpr auto motion_id="MCKEFAANJNI";
 inline constexpr auto motion_row="LMBKNCAIDLC";
+inline constexpr auto update_version_type="PKKGCBHDFNK";
+inline constexpr auto selected_design_version="GMFJPGKJAAI";
 // 4.6 CA154CA -> CA10A50..A6B: normalized expression blend 0.2.
 // Stun behavior selects the independently observed blink source 3.
 inline constexpr float expression_transition=0.2f;

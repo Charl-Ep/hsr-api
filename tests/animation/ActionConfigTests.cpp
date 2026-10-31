@@ -297,6 +297,7 @@ void TestActionConfig() {
     input.full_types=input.field_reads=0;
     const auto graph=catalog.ReadAbilitySources({"abilityA","abilityB","abilityA","missing"},input);
     Check(roots.empty() && graph.nodes_read==4 && graph.animations.size()==8 && graph.issues.size()==3);
+    for(const auto& issue:graph.issues)Check(issue.kind==AbilitySourceIssueKind::ReadFailure);
     // Methods are needed only for the dictionary and keys, not graph nodes.
     // Repeated edges, cycles and shared nodes must not reread node fields.
     Check(input.full_types==2 && input.field_reads==4);
@@ -410,6 +411,30 @@ void TestActionConfig() {
     for(const auto& f:link->fields)if(f.name=="AbilityName")std::memcpy(reinterpret_cast<char*>(link)+f.offset,&dynamic,sizeof(dynamic));
     referenced=catalog.ReadAbilitySources({"entry-link"},input);
     Check(!referenced.references[0].target.available && !referenced.issues.empty() && roots.empty());
+    Check(referenced.issues.front().kind==AbilitySourceIssueKind::NotLiteral);
+    {
+        // A read null/computed target is source information, not a failed
+        // native read. Keep unavailable literals and classify them separately.
+        auto null_target=New();*null_target=*wait;
+        for(const auto& field:null_target->fields)if(field.name=="TargetType") {
+            void* empty=nullptr;std::memcpy(reinterpret_cast<char*>(null_target)+field.offset,&empty,sizeof(empty));
+        }
+        auto computed=New();computed->type="TargetEvaluator";
+        auto computed_wait=New();*computed_wait=*wait;
+        for(const auto& field:computed_wait->fields)if(field.name=="TargetType")
+            std::memcpy(reinterpret_cast<char*>(computed_wait)+field.offset,&computed,sizeof(computed));
+        auto limited=New();Sequence(limited,"Tasks",Array({null_target,computed_wait}));
+        Field(limited,"Multiplier","System.Collections.Generic.Dictionary<System.Single,System.Single>",std::uint64_t{1});
+        documents[L"source-limitations"]=limited;
+        const auto limits=catalog.ReadAbilitySources({"source-limitations"},input);
+        Check(limits.issues.size()==3 && limits.waits.size()==2 && roots.empty());
+        unsigned nonliteral=0,unsupported=0;
+        for(const auto& issue:limits.issues) {
+            nonliteral+=issue.kind==AbilitySourceIssueKind::NotLiteral;
+            unsupported+=issue.kind==AbilitySourceIssueKind::Unsupported;
+        }
+        Check(nonliteral==2 && unsupported==1 && !limits.waits[0].target_alias.available && !limits.waits[1].target_alias.available);
+    }
     auto mapping=New();mapping->type="SetControlSkillMapping";Field(mapping,"ControlSkillType","RPG.GameCore.ControlSkillType",7);
     String(mapping,"SkillTriggerKey",L"ConfiguredKey");Field(mapping,"TargetType","RPG.GameCore.TargetEvaluator",caster_alias);Field(mapping,"TaskEnabled","System.Boolean",static_cast<unsigned char>(1));
     auto continuation=New();continuation->type="UseSkillOneMore";Field(continuation,"SkillType","RPG.GameCore.ControlSkillType",7);

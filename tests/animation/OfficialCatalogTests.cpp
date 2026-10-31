@@ -9,7 +9,7 @@
 namespace {
 using namespace hksr::api;
 void Check(bool value) { if(!value) throw std::runtime_error("official catalog test failed"); }
-enum Kind { Text,Table,Values,List,Array,Npc,Player,Avatar,Config,Type,MotionList,Motion,FreeStyleConfig,StatesConfig,StateRow,Number };
+enum Kind { Text,Table,Values,List,Array,Npc,Player,Avatar,Config,Type,MotionList,Motion,FreeStyleConfig,StatesConfig,StateRow,Number,Version,VersionField };
 struct Node {
     Kind kind=Text; std::wstring text;
     std::vector<void*> items;
@@ -19,6 +19,7 @@ struct Node {
 };
 std::vector<std::unique_ptr<Node>> storage;
 Node *npcs,*players,*avatars,*config,*object_type,*motion_list,*motion,*shared_motion,*freestyle_config,*states_config;
+Node *version_data,*version_type,*version_field,*build_id;
 int info,sequence=0,loads=0,copies=0,frees=0;
 bool npc_unavailable=false,free_fault=false;
 bool state_lists=false,motion_index_unavailable=false;
@@ -53,10 +54,19 @@ void* __fastcall MotionRow(std::uint32_t id,void*) { return id==42?motion:id==44
 void* __fastcall FreeStyleConfigLoad(Node* path,void*) { Check(path->text==L"FreeStyle/A"); return freestyle_config; }
 void* __fastcall StatesConfigLoad(Node* path,void*) { Check(path->text==L"States/A"); return states_config; }
 std::uint32_t __fastcall NumberValue(Node* node,void*) { Check(node->kind==Number); return node->id; }
+void* __fastcall BuildId(void*){return build_id;}
+void* __fastcall VersionFieldRead(Node* type,Node* name,int flags,void*) {
+    Check(type==version_type && name->text==L"s_VersionData" && flags==56);return version_field;
+}
+void* __fastcall VersionValue(Node* field,void* instance,void*){Check(field==version_field && !instance);return version_data;}
+std::uint32_t __fastcall SelectedDesign(Node* value,void*){Check(value==version_data->config);return value->id;}
 struct Inputs:MethodResolver,ObjectMetadata,ManagedObjects {
     Method Resolve(const char* space,const char* type,const char* name,const char* result,
         std::initializer_list<const char*> args,MethodKind kind) override {
         const std::string t=type,n=name,r=result;
+        if(t=="VersionData"){Check(n=="get_BuildId" && r=="System.String" && kind==MethodKind::Static && args.size()==0);return M(BuildId);}
+        if(t=="RuntimeType"){Check(n=="GetField" && kind==MethodKind::Instance && args.size()==2);return M(VersionFieldRead);}
+        if(t=="PKKGCBHDFNK"){Check(n=="GMFJPGKJAAI" && r=="System.UInt32" && kind==MethodKind::Instance && args.size()==0);return M(SelectedDesign);}
         if(t=="FreeStyleComponent") {
             Check(kind==MethodKind::Instance && std::string(space)=="RPG.GameCore" && r=="System.String" && args.size()==0);
             if(n=="get_FreeStyleCharacterID") return M(Identity);
@@ -83,6 +93,7 @@ struct Inputs:MethodResolver,ObjectMetadata,ManagedObjects {
     DeclaredType ReadObjectType(void* object) override {
         auto node=static_cast<Node*>(object); DeclaredType type{"Test","Node",{}};
         auto add=[&](const char* n,const char* r,std::vector<std::string> args,Method m) { type.methods.push_back({n,r,std::move(args),false,m}); };
+        if(node->kind==VersionField){add("GetValue","System.Object",{"System.Object"},M(VersionValue));return type;}
         if(node->kind==Table) add("get_Values","Test.ConstructedValues",{},M(ValueItems));
         else if(node->kind==Values) {
             add("get_Count","System.Int32",{},M(Count));
@@ -99,6 +110,7 @@ struct Inputs:MethodResolver,ObjectMetadata,ManagedObjects {
     std::vector<DeclaredField> ReadObjectFields(void* object) override {
         auto node=static_cast<Node*>(object); std::vector<DeclaredField> fields;
         auto add=[&](const char* name,const char* type,std::size_t offset) {fields.push_back({"Test","Node",name,type,offset,0,!node->bad});};
+        if(node->kind==Version)add("UpdateVersionInfoIns","PKKGCBHDFNK",offsetof(Node,config));
         if(node->kind==Npc) { add("ID","System.UInt32",offsetof(Node,id)); add("JsonPath","System.String",offsetof(Node,config)); add("ConfigEntityPath","System.String",offsetof(Node,prefab)); }
         if(node->kind==Avatar) { add("AvatarID","System.UInt32",offsetof(Node,avatar)); add("JsonPath","System.String",offsetof(Node,config)); add("DefaultAvatarModelPath","System.String",offsetof(Node,prefab)); }
         if(node->kind==Motion) {
@@ -122,7 +134,10 @@ struct Inputs:MethodResolver,ObjectMetadata,ManagedObjects {
     }
     ObjectResult NewStringUtf8(const char* value) override { auto n=New(Text); while(*value) n->text.push_back(*value++); return {{true,0},n}; }
     ObjectResult AllocateObject(const char*,const char*) override { throw std::runtime_error("catalog must not allocate entity/config objects"); }
-    ObjectResult ManagedType(const char* space,const char* name) override { Check(std::string(space)=="System" && std::string(name)=="Object"); return {{true,0},object_type}; }
+    ObjectResult ManagedType(const char* space,const char* name) override {
+        if(std::string(space)=="RPG.Client" && std::string(name)=="GlobalVars")return {{true,0},version_type};
+        Check(std::string(space)=="System" && std::string(name)=="Object"); return {{true,0},object_type};
+    }
 };
 }
 void TestOfficialCatalog() {
@@ -148,6 +163,12 @@ void TestOfficialCatalog() {
     state->events->items={entrance,missing}; states_config->events->items={state};
     Inputs input; ComponentConfigMethods text; text.string_length=M(Length); text.string_character=M(Character);
     OfficialCatalog catalog(input,input,input,{M(Retain),M(Target),M(Free),{},{}},ManagedArrays({M(Create),M(Count),M(Item),{}, {}}),ComponentConfig(text));
+    version_data=New(Version);version_data->config=New(Number);version_data->config->id=123;
+    version_type=New(Type);version_field=New(VersionField);build_id=String(L"fixture-build");
+    const auto version=catalog.ReadActionDataVersion();Check(version.build=="fixture-build" && version.design==123 && roots.empty());
+    version_data->config->id=0;bool version_failed=false;
+    try{catalog.ReadActionDataVersion();}catch(const std::runtime_error&){version_failed=true;}
+    Check(version_failed && roots.empty());version_data->config->id=123;
     const auto result=catalog.ReadCharacters();
     Check(result.npcs.enumerated && result.npcs.declared_count==2 && result.npcs.visited_count==2 && result.npcs.rows.size()==1 && result.npcs.issues.size()==1);
     Check(result.npcs.rows[0].character_config==u8"NPC/藿藿.json");

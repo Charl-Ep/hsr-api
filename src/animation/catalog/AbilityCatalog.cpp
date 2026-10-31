@@ -2,6 +2,15 @@
 
 namespace hksr::sdk_v1 {
 struct OfficialCatalog::State::AbilityRead final : ProgressiveAbilitySourceRead {
+    struct Limitation final : std::runtime_error {
+        AbilitySourceIssueKind kind;
+        Limitation(AbilitySourceIssueKind value,const char* reason):std::runtime_error(reason),kind(value){}
+    };
+    static AbilitySourceIssueKind IssueKind(const std::exception& error) {
+        const auto* limitation=dynamic_cast<const Limitation*>(&error);
+        return limitation?limitation->kind:AbilitySourceIssueKind::ReadFailure;
+    }
+    struct Issue {std::string error;AbilitySourceIssueKind kind=AbilitySourceIssueKind::ReadFailure;};
     std::shared_ptr<State> owner;
     State& s; TypeRelationships& types; State::Scope scope;
     AbilitySources output;
@@ -31,10 +40,11 @@ struct OfficialCatalog::State::AbilityRead final : ProgressiveAbilitySourceRead 
         std::optional<AbilityReferenceSource> reference;
         std::optional<SkillMappingSource> skill_mapping;
         std::optional<SkillContinuationSource> skill_continuation;
-        std::vector<Edge> edges; std::vector<std::string> issues;
+        std::vector<Edge> edges; std::vector<Issue> issues;
     };
     std::map<void*,Node> cache;
-    std::map<void*,TextInput> target_aliases;
+    struct Alias {TextInput value;AbilitySourceIssueKind issue=AbilitySourceIssueKind::ReadFailure;};
+    std::map<void*,Alias> target_aliases;
     std::map<std::string,bool> config_types;
     std::vector<std::string> abilities;
     std::size_t next_ability=0;
@@ -58,7 +68,8 @@ struct OfficialCatalog::State::AbilityRead final : ProgressiveAbilitySourceRead 
         :owner(std::move(state)),s(*owner),types(relation),scope(s),abilities(std::move(names)){}
     bool config_type(const std::string& qualified) {
         auto found=config_types.find(qualified); if(found!=config_types.end()) return found->second;
-        Require(qualified.find_first_of("<[]>&*")==std::string::npos,"unsupported constructed task declaration");
+        if(qualified.find_first_of("<[]>&*")!=std::string::npos)
+            throw Limitation(AbilitySourceIssueKind::Unsupported,"unsupported constructed task declaration");
         const auto split=qualified.find_last_of('.');
         const auto space=split==std::string::npos?std::string():qualified.substr(0,split);
         const auto name=split==std::string::npos?qualified:qualified.substr(split+1);
@@ -78,24 +89,31 @@ struct OfficialCatalog::State::AbilityRead final : ProgressiveAbilitySourceRead 
             fields=s.metadata.ReadObjectFields(object);
             auto capture=[&](auto& value,const char* field,auto read) {
                 try { value.value=read(); value.available=true; }
-                catch(const std::exception& error) { value.error=error.what(); node.issues.push_back(std::string(field)+": "+error.what()); }
+                catch(const std::exception& error) { value.error=error.what(); node.issues.push_back({std::string(field)+": "+error.what(),IssueKind(error)}); }
             };
             auto target_alias=[&]() {
+                if(std::none_of(fields.begin(),fields.end(),[](const auto& field){return field.name=="TargetType";}))
+                    throw Limitation(AbilitySourceIssueKind::NotLiteral,"task does not declare a literal target");
                 const auto target=Read<void*>(object,Field(fields,"TargetType","RPG.GameCore.TargetEvaluator"));
-                Require(target!=nullptr,"target is null, not a literal Caster");
+                if(!target)throw Limitation(AbilitySourceIssueKind::NotLiteral,"target is null, not a literal Caster");
                 auto found=target_aliases.find(target);
                 if(found==target_aliases.end()) {
-                    TextInput value;
+                    Alias alias;auto& value=alias.value;
                     try {
                         scope.Keep({{true,0},target});
                         const auto target_type=s.metadata.ReadObjectTypeName(target);
-                        Require(target_type.name_space=="RPG.GameCore" && target_type.name=="TargetAlias","target is not a literal alias");
+                        if(target_type.name_space!="RPG.GameCore" || target_type.name!="TargetAlias")
+                            throw Limitation(AbilitySourceIssueKind::NotLiteral,"target is not a literal alias");
                         value={true,s.String(target,s.metadata.ReadObjectFields(target),"Alias"),{}};
-                    }catch(const std::exception& e){value.error=e.what();}
-                    found=target_aliases.emplace(target,std::move(value)).first;
+                    }catch(const std::exception& e){value.error=e.what();alias.issue=IssueKind(e);}
+                    found=target_aliases.emplace(target,std::move(alias)).first;
                 }
-                if(!found->second.available)throw std::runtime_error(found->second.error);
-                return found->second.value;
+                if(!found->second.value.available) {
+                    if(found->second.issue!=AbilitySourceIssueKind::ReadFailure)
+                        throw Limitation(found->second.issue,found->second.value.error.c_str());
+                    throw std::runtime_error(found->second.value.error);
+                }
+                return found->second.value.value;
             };
             if(name=="RPG.GameCore.TriggerAnimState" || name=="RPG.GameCore.TriggerAnimStateWithMove" || name=="RPG.GameCore.MoveToTargetList") {
                 AnimationTaskSource entry;
@@ -111,7 +129,8 @@ struct OfficialCatalog::State::AbilityRead final : ProgressiveAbilitySourceRead 
                 // Optional relationship information must not hide an otherwise
                 // discoverable animation with a computed or missing target.
                 try {entry.target_alias={true,target_alias(),{}};}
-                catch(const std::exception& e){entry.target_alias.error=e.what();}
+                catch(const std::exception& e){entry.target_alias.error=e.what();
+                    if(IssueKind(e)==AbilitySourceIssueKind::ReadFailure)node.issues.push_back({e.what()});}
                 node.animation=std::move(entry);
             }
             if(name=="RPG.GameCore.WaitAnimState") {
@@ -137,9 +156,10 @@ struct OfficialCatalog::State::AbilityRead final : ProgressiveAbilitySourceRead 
                     // query). Only a literal value is a discovery edge; never
                     // evaluate its key or execute the containing ability.
                     auto value=Read<void*>(object,Field(fields,"AbilityName","RPG.GameCore.DynamicString"));
-                    Require(value!=nullptr,"ability name absent");
+                    if(!value)throw Limitation(AbilitySourceIssueKind::NotLiteral,"ability name absent");
                     const auto declared=s.metadata.ReadObjectFields(value);
-                    Require(!Read<unsigned char>(value,Field(declared,"Custom","System.Boolean")),"dynamic ability name requires runtime context");
+                    if(Read<unsigned char>(value,Field(declared,"Custom","System.Boolean")))
+                        throw Limitation(AbilitySourceIssueKind::NotLiteral,"dynamic ability name requires runtime context");
                     return s.String(value,declared,"Value");
                 });
                 node.reference=std::move(entry);
@@ -159,7 +179,7 @@ struct OfficialCatalog::State::AbilityRead final : ProgressiveAbilitySourceRead 
                 capture(entry.enabled,"TaskEnabled",[&]{return Read<unsigned char>(object,Field(fields,"TaskEnabled","System.Boolean"))!=0;});
                 node.skill_continuation=std::move(entry);
             }
-        } catch(const std::exception& error) { node.issues.push_back(error.what()); }
+        } catch(const std::exception& error) { node.issues.push_back({error.what(),IssueKind(error)}); }
     }
     void Add(ConfigStep step,void* child) {
         if(child && actual_config(child)) {
@@ -203,11 +223,11 @@ struct OfficialCatalog::State::AbilityRead final : ProgressiveAbilitySourceRead 
                 next.lookup=Instance(declaration,"get_Item",value_type.c_str(),{"System.String"});
                 sequence=std::move(next);
             } else if(ft.compare(0,27,"System.Collections.Generic.")==0) {
-                building.issues.push_back(owner_name+"."+field.name+": unsupported container "+ft);
+                building.issues.push_back({owner_name+"."+field.name+": unsupported container "+ft,AbilitySourceIssueKind::Unsupported});
             } else if(ft.compare(0,7,"System.")!=0 && config_type(ft)) {
                 Add({owner_name,field.name},Read<void*>(current->object,field));
             }
-        }catch(const std::exception& e){building.issues.push_back(owner_name+"."+field.name+": "+e.what());}
+        }catch(const std::exception& e){building.issues.push_back({owner_name+"."+field.name+": "+e.what(),IssueKind(e)});}
     }
     void ReadElement() {
         const auto i=sequence.index++;
@@ -219,7 +239,7 @@ struct OfficialCatalog::State::AbilityRead final : ProgressiveAbilitySourceRead 
                 Require(child.call.returned,"dictionary value lookup failed");
                 Add({sequence.owner,sequence.field,ConfigSelection::StringKey,-1,s.Text(item.object)},child.object);
             }else Add({sequence.owner,sequence.field,ConfigSelection::Index,i,{}},item.object);
-        }catch(const std::exception& e){building.issues.push_back(sequence.owner+"."+sequence.field+"["+std::to_string(i)+"]: "+e.what());}
+        }catch(const std::exception& e){building.issues.push_back({sequence.owner+"."+sequence.field+"["+std::to_string(i)+"]: "+e.what(),IssueKind(e)});}
     }
     void Emit(const Work& work,const Node& node) {
         if(node.animation) {auto entry=*node.animation;entry.ability=ability;entry.path=work.path;output.animations.push_back(std::move(entry));}
@@ -231,7 +251,7 @@ struct OfficialCatalog::State::AbilityRead final : ProgressiveAbilitySourceRead 
         // Preserve repeated ordered slots while expanding a shared/cyclic node
         // once per root. Cache lifetime covers ALL roots, not just one frame.
         if(!visited.insert(work.object).second)return;
-        for(const auto& issue:node.issues)output.issues.push_back({ability,issue,work.path});
+        for(const auto& issue:node.issues)output.issues.push_back({ability,issue.error,work.path,issue.kind});
         for(auto edge=node.edges.rbegin();edge!=node.edges.rend();++edge) {
             auto path=work.path;path.push_back(edge->step);pending.push_back({edge->object,std::move(path)});
         }

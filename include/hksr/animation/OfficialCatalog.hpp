@@ -26,6 +26,9 @@ struct CharacterCatalog {
     CatalogBatch<AvatarCatalogRow> avatars;
 };
 struct TextInput { bool available=false; std::string value,error; };
+// Official build and currently selected design-data revision. Values only;
+// consumers also qualify their reader contract and installed hotfix metadata.
+struct ActionDataVersion { std::string build; std::uint32_t design=0; };
 struct TextArrayInput { bool available=false; std::vector<std::string> values; std::string error; };
 struct PresentationConfigInput {
     std::string path;
@@ -228,7 +231,12 @@ struct EffectRemovalSource {
     std::vector<ConfigStep> path;
     EffectRemovalInput input;
 };
-struct AbilitySourceIssue { std::string ability,error; std::vector<ConfigStep> path; };
+enum class AbilitySourceIssueKind { ReadFailure, NotLiteral, Unsupported };
+struct AbilitySourceIssue {
+    std::string ability,error;
+    std::vector<ConfigStep> path;
+    AbilitySourceIssueKind kind=AbilitySourceIssueKind::ReadFailure;
+};
 struct AbilityReferenceSource {
     std::string ability;
     std::vector<ConfigStep> path;
@@ -311,6 +319,7 @@ public:
     OfficialCatalog(const OfficialCatalog&)=delete;
     OfficialCatalog& operator=(const OfficialCatalog&)=delete;
     CharacterCatalog ReadCharacters();
+    ActionDataVersion ReadActionDataVersion();
     TextInput ReadAdventureIdentity(const std::string& path);
     PresentationConfigInput ReadPresentationConfig(const std::string& path);
     // Reads one explicit document. ReferenceJsonConfig/event lists are returned
