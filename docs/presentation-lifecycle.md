@@ -155,6 +155,8 @@ When a carrier has no adventure MonoAvatar, the session can use an existing Look
 
 `context.EffectServices()` returns an optional `PresentationEffects` provider. `CreateRequest` constructs an `OwnedEffectRequest`; `RegisterExit` prepares exit-event configuration.
 
+An activated context tracks native effect submissions attributed to its created entities. After an entity generation ends, the shared runtime retires its remaining receipts through the official effect manager, outside the producing call stack, and observes release or pool reuse. This includes late submissions; it does not retire other entities' effects or replace action-level and model-transition cleanup.
+
 `Start` retains the request's parameters, original manager and completion bridge. Callbacks record signals; the owner frame performs removal. After cancellation, advance `Service` until `Status().closed`. An unmatched removal is retried after a new successful-load callback. A reused parameter-pool generation ends writes through the old request.
 
 `StartEntity(caster, target, path, options)` keeps the creator and recipient distinct. It maps the path through the caster, retains both entities, and uses the official parameter pool and asynchronous manager. Options specify the engine name, position/rotation offsets, optional scale, attachment, fade-in and immediate simulation. Inputs are copied before engine calls; cancellation uses the same request lifecycle as `Start`.
