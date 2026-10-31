@@ -171,6 +171,7 @@ set(HKSR_API_SOURCES
     src/presentation/effects/EffectScopes.cpp
     src/presentation/effects/EffectViewPolicy.cpp
     src/presentation/effects/EffectSubmissions.cpp
+    src/presentation/effects/EntityEffectRetirement.cpp
     src/presentation/effects/OwnedEffectRequest.cpp
     src/presentation/effects/PresentationEffects.cpp
 

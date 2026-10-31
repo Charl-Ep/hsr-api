@@ -1,5 +1,6 @@
 #include <hksr/presentation/effects/OwnedEffectRequest.hpp>
 #include <hksr/presentation/effects/PresentationEffects.hpp>
+#include "../../../src/presentation/effects/EntityEffectRetirement.hpp"
 #include <Windows.h>
 #include <array>
 #include <algorithm>
@@ -373,5 +374,47 @@ void TestOwnedEffectRequest() {
         Check(request.Status().closed && removes==0 && releases==0 && roots.empty());
     }
     Reset();
-    std::cout<<"Owned effects: synchronous/late callbacks, original manager, pool reuse, partial writes/submission, cancellation and two-request isolation passed; no game acceptance.\n";
+    {
+        // The entity lifetime backstop consumes the same real request service.
+        // It does not infer ownership from a path, target or the selected actor.
+        bool alive=true;
+        const EntityOrigin origin{{reinterpret_cast<GameEntity*>(&entity),7},reinterpret_cast<GameWorld*>(&path)};
+        const auto receipt=[&](std::uint64_t serial,Params& p,EntityOrigin source) {
+            EffectSubmission s;s.serial=serial;s.origin=source;s.manager=&manager;s.request={p.id,0,&p};return s;
+        };
+        detail::EntityEffectRetirement ledger(Services(),[&](EntityOrigin value){return alive && value.token.generation==7;});
+        first.callback=second.callback=&official_callback;first.state=second.state=3;
+        const auto a=receipt(1,first,origin);auto b=receipt(2,second,origin);
+        ledger.Before(a);ledger.Before(b);alive=false;release_on_remove=true;
+        ledger.Collect();Check(removes==0);ledger.After(b,true);
+        ledger.Collect();Check(removes==0);ledger.After(a,true);
+        ledger.Collect();Check(removes==2 && ledger.Pending()==0 && roots.empty());
+        Check(official_completions==2 && submits==0 && releases==0);
+        // Late native event submission after Dispose is also retired, while
+        // the producer's original callback and output remain untouched.
+        first.released=false;++first.id;const auto late=receipt(3,first,origin);
+        ledger.Before(late);ledger.Collect();Check(removes==2);
+        ledger.After(late,false);ledger.Collect();Check(removes==3 && roots.empty());
+    }
+    Reset();
+    {
+        bool alive=true;
+        const EntityOrigin origin{{reinterpret_cast<GameEntity*>(&entity),8},reinterpret_cast<GameWorld*>(&path)};
+        detail::EntityEffectRetirement ledger(Services(),[&](EntityOrigin){return alive;});
+        EffectSubmission s;s.serial=4;s.origin=origin;s.manager=&manager;s.request={first.id,0,&first};
+        first.callback=&official_callback;first.state=3;
+        ledger.Before(s);ledger.After(s,true);s.serial=5;
+        ledger.Before(s);ledger.After(s,true);Check(ledger.Pending()==1);
+        ledger.Collect();Check(removes==0 && !first.released);
+        // An official pool reuse must never remove the new occupant.
+        ++first.id;alive=false;ledger.Collect();Check(removes==0 && ledger.Pending()==0 && roots.empty());
+        // Delayed load after unmatched removal retries only with new evidence.
+        first.state=1;s.serial=6;s.request.id=first.id;
+        ledger.Before(s);ledger.After(s,true);remove_match=false;ledger.Collect();Check(removes==1);
+        ledger.Collect();Check(removes==1);
+        first.state=3;remove_match=true;release_on_remove=true;ledger.Collect();
+        Check(removes==2 && ledger.Pending()==0 && roots.empty());
+    }
+    Reset();
+    std::cout<<"Owned effects: callbacks, generation-qualified entity retirement, late loads, pool reuse and isolation passed; no game acceptance.\n";
 }

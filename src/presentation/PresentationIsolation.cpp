@@ -4,6 +4,8 @@
 #include "timeline/TimelineEnvironment.hpp"
 #include "timeline/CommonTimelinePlayback.hpp"
 #include "effects/EffectScopes.hpp"
+#include "effects/EntityEffectRetirement.hpp"
+#include <hksr/entity/LifecycleHooks.hpp>
 #include "PresentationClients.hpp"
 #include "../runtime/RepeatedDiagnostics.hpp"
 #include <Windows.h>
@@ -47,6 +49,8 @@ struct PresentationIsolation::State::Shared {
     std::unique_ptr<detail::TimelineTasks> tasks;
     std::unique_ptr<detail::EffectQueries> queries;
     std::unique_ptr<detail::EffectScopes> effects;
+    std::unique_ptr<detail::EntityEffectRetirement> effect_retirement;
+    std::unique_ptr<EffectSubmissions> effect_submissions;
     std::unique_ptr<detail::TimelineEnvironment> environment;
     std::unique_ptr<detail::CommonTimelinePlayback> playback;
     ReferenceMethods references;
@@ -79,6 +83,20 @@ struct PresentationIsolation::State::Shared {
         environment=std::make_unique<detail::TimelineEnvironment>(m,m,refs,fields,
             [this](void* director){return registry->ObserveDirector(director);},
             [this](auto owner,auto){return clients.Policy(Origin(owner)).allow_timeline_environment;},log);
+        const auto effect_methods=ResolveEffectAccess460(m);
+        if(!effect_methods.id.code || !effect_methods.released.code || !effect_methods.state.code ||
+            !effect_methods.instance.code || !effect_methods.remove.code)
+            throw std::runtime_error("entity effect retirement bindings incomplete");
+        EffectRequestServices retirement_services{refs,EffectAccess(effect_methods)};
+        retirement_services.trace=log;
+        effect_retirement=std::make_unique<detail::EntityEffectRetirement>(std::move(retirement_services),[](EntityOrigin origin) {
+            const auto current=TrackedEntities().Current(origin.token.entity);
+            return current.generation==origin.token.generation && !TrackedEntities().IsDisposed(origin.token);
+        });
+        effect_submissions=std::make_unique<EffectSubmissions>(m,refs,fields,
+            [this](GameEntity* entity){return sources.Identify(entity);},
+            [this](const EffectSubmission& submission){effect_retirement->Before(submission);},
+            [this](const EffectSubmission& submission,bool returned){effect_retirement->After(submission,returned);},log);
     }
     void CheckThread() const {
         if(!thread || thread!=GetCurrentThreadId())throw std::logic_error("presentation operation requires its activated engine thread");
@@ -92,6 +110,7 @@ struct PresentationIsolation::State::Shared {
         if(thread && thread!=GetCurrentThreadId())throw std::logic_error("presentation isolation cannot migrate engine threads");
         registry->ActivateOnCurrentThread();tasks->ActivateOnCurrentThread();
         queries->ActivateOnCurrentThread();effects->ActivateOnCurrentThread();environment->ActivateOnCurrentThread();
+        effect_submissions->ActivateOnCurrentThread();
         thread=GetCurrentThreadId();
     }
     void Collect() {
@@ -106,6 +125,7 @@ struct PresentationIsolation::State::Shared {
                 if(previous!=e.what()){previous=e.what();Log(std::string(name)+": "+previous);}
             }
         };
+        run("entity effect retirement",[&]{effect_retirement->Collect();});
         run("source collection",[&]{sources.Collect();});
         run("task collection",[&]{tasks->Collect();});
         run("wait collection",[&]{waits->Collect();});

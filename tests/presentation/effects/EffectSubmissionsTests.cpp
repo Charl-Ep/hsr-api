@@ -1,5 +1,6 @@
 #include <hksr/presentation/effects/EffectSubmissions.hpp>
 #include <hksr/presentation/effects/OwnedEffectRequest.hpp>
+#include "../../../src/presentation/effects/EntityEffectRetirement.hpp"
 #include <hksr/metadata/MetadataResolver.hpp>
 #include <Windows.h>
 #include <algorithm>
@@ -159,6 +160,28 @@ int main() {
         Check(begins.size()==stopped && second_before==2 && second_after==2,"stop evicted other subscriber");
         std::thread foreign([]{Sync(&manager,&request,&info);});foreign.join();Check(second_before==2,"foreign thread observed");
         second.Stop();Check(roots.empty(),"remaining roots");
+        // Native events without a Framework action owner still belong to the
+        // entity. The shared retirement subscriber coexists with other clients.
+        {
+            bool live=true;
+            detail::EntityEffectRetirement retirement(Services(),[&](EntityOrigin){return live;});
+            EffectSubmissions lifetime(metadata,Refs(),Fields,Identify,
+                [&](const auto& s){retirement.Before(s);retirement.Collect();},
+                [&](const auto& s,bool ok){retirement.After(s,ok);});
+            lifetime.ActivateOnCurrentThread();request.id=90;request.released=false;
+            const auto before_remove=removes;const auto before_sync=sync_calls;
+            request.caster=reinterpret_cast<GameEntity*>(&public_actor);
+            Sync(&manager,&request,&info);retirement.Collect();
+            Check(sync_calls==before_sync+1 && retirement.Pending()==0 && removes==before_remove,"official source changed");
+            request.caster=reinterpret_cast<GameEntity*>(&actor);
+            Trigger(&task,&info);retirement.Collect();Check(removes==before_remove && retirement.Pending()==1,"live entity effect removed");
+            live=false;retirement.Collect();
+            Check(removes==before_remove+1 && retirement.Pending()==0 && roots.empty(),"native event effect orphaned");
+            request.released=false;++request.id;
+            Trigger(&task,&info);Check(removes==before_remove+1,"late producer stack interrupted");
+            retirement.Collect();Check(removes==before_remove+2 && roots.empty(),"late event effect orphaned");
+            lifetime.Stop();
+        }
         // Re-subscribe after all stopped; no reinstall collision. Stop during
         // Before must detach After without interrupting the original call.
         EffectSubmissions* stop_in_callback=nullptr;unsigned third_after=0;
