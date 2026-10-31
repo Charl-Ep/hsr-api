@@ -55,15 +55,15 @@ void* __fastcall LoadTemplate(Node* key,void* info){last_definition_root=PhaseCo
 void* __fastcall ReflectField(Node* type,Node* name,int flags,void* info) {
     Check(flags==56 && info==&metadata);
     if(type==helper_type) {auto field=New();field->type="StaticField";field->text=name->text;return field;}
-    Check(type==reflected_type && name->text==L"GameCoreConstValueConfig");
     if(type==effect_type) {auto field=New();field->type="EffectField";field->text=name->text;return field;}
+    Check(type==reflected_type && name->text==L"GameCoreConstValueConfig");
     return reflected_field;
 }
 void* __fastcall ReflectValue(Node* field,void* instance,void* info) {
     Check(!instance && info==&metadata);
     if(field->type=="StaticField")return helper_values.at(field->text);
-    Check(field==reflected_field);return visual_global;
     if(field->type=="EffectField")return effect_values.at(field->text);
+    Check(field==reflected_field);return visual_global;
 }
 void* __fastcall CloneVisual(Node* source,void* info) {
     Check(info==&metadata);
