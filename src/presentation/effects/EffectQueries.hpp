@@ -1,0 +1,35 @@
+#pragma once
+#include "../PresentationCallScope.hpp"
+#include <hksr/metadata/RuntimeMetadata.hpp>
+#include <hksr/presentation/effects/EffectRelations.hpp>
+#include <functional>
+#include <string>
+#include <vector>
+
+namespace hksr::api::detail {
+// Query-only adapter. It does not create/update effects or replace their target.
+// Known caller scopes use an independent list on a temporary manager receiver;
+// the original FindEffectByUniqueName still performs all matching/selection.
+// No scope is UNKNOWN, not public. PresentationIsolation installs this adapter.
+// ForceLoadEffectByUniqueName is a separate mutating path, not covered here.
+class HKSR_API EffectQueries {
+  public:
+    using Fields = std::function<std::vector<DeclaredField>(const char*, const char*)>;
+    // Read-only source resolution, including retired entity provenance and any
+    // explicitly owned request with a null CasterEntity. Never infer from target.
+    // Empty = established public source. Throw for unknown; no game mutations.
+    using Source = std::function<std::optional<PresentationOwner>(EffectReference, const EffectRelationsSnapshot&)>;
+    using Trace = std::function<void(const std::string&)>;
+    EffectQueries(MethodResolver&, ObjectMetadata&, ManagedObjects&, ReferenceMethods, EffectQueries::Fields,
+                  Source, Trace);
+    ~EffectQueries();
+    EffectQueries(const EffectQueries&) = delete;
+    EffectQueries& operator=(const EffectQueries&) = delete;
+    void ActivateOnCurrentThread();
+    void Stop() noexcept; // detach callbacks, no game calls or DLL unloading
+  private:
+    struct State;
+    struct Holder;
+    Holder* holder_ = nullptr;
+};
+}

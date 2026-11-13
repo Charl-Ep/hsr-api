@@ -1,0 +1,51 @@
+#include <hksr/entity/EntityAccess.hpp>
+#include <hksr/native/Invocation.hpp>
+
+namespace hksr::api {
+EntityAccess::EntityAccess(EntityAccessMethods methods)
+    : methods_(std::make_shared<const EntityAccessMethods>(std::move(methods))) {}
+EntityAccess::~EntityAccess() = default;
+EntityAccess::EntityAccess(const EntityAccess&) noexcept = default;
+EntityAccess& EntityAccess::operator=(const EntityAccess&) noexcept = default;
+
+namespace {
+template <class T, class... Args> Observed<T> ReadValue(Method method, Args... args) {
+    Observed<T> result;
+    result.read = native::Call(method, &result.value, args...);
+    return result;
+}
+}
+EntitySnapshot EntityAccess::Read(GameEntity* entity) const {
+    if (!entity)
+        return {};
+    return {ReadValue<std::uint32_t>(methods_->runtime_id, entity),
+            ReadValue<GameWorld*>(methods_->owner_world, entity), ReadValue<bool>(methods_->loaded, entity)};
+}
+Observed<GameEntity*> EntityAccess::Lookup(EntityManager* manager, std::uint32_t id) const {
+    return manager ? ReadValue<GameEntity*>(methods_->manager_lookup, manager, id) : Observed<GameEntity*>{};
+}
+Observed<int> EntityAccess::Type(GameEntity* entity) const {
+    return entity ? ReadValue<int>(methods_->entity_type, entity) : Observed<int>{};
+}
+Observed<int> EntityAccess::AliveState(GameEntity* entity) const {
+    return entity ? ReadValue<int>(methods_->alive_state, entity) : Observed<int>{};
+}
+ObjectResult EntityAccess::Component(GameEntity* entity, void* type) const {
+    ObjectResult result;
+    if (entity && type)
+        result.call = native::Call(methods_->component, &result.object, entity, type);
+    return result;
+}
+RetirementResult EntityAccess::RequestRetirement(GameWorld* world, GameEntity* entity) const {
+    RetirementResult result;
+    // These are the two real dependencies of this operation, not all getters.
+    if (!world || !entity || !methods_->kill_immediately.code || !methods_->make_die.code)
+        return result;
+    result.set_immediate = native::CallVoid(methods_->kill_immediately, entity, true);
+    if (!result.set_immediate.returned)
+        return result;
+    result.request_attempted = true;
+    result.request = native::CallVoid(methods_->make_die, world, entity, static_cast<GameEntity*>(nullptr));
+    return result;
+}
+}

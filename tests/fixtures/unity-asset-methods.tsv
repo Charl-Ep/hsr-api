@@ -1,0 +1,69 @@
+UnityEngine.Mesh	.ctor	System.Void		6278
+UnityEngine.Mesh	Internal_Create	System.Void	UnityEngine.Mesh	145
+UnityEngine.Mesh	set_indexFormat	System.Void	UnityEngine.Rendering.IndexFormat	2182
+UnityEngine.Mesh	SetIndicesNativeArrayImpl	System.Void	System.Int32;UnityEngine.MeshTopology;UnityEngine.Rendering.IndexFormat;System.IntPtr;System.Int32;System.Int32;System.Boolean;System.Int32	129
+UnityEngine.Mesh	HasBoneWeights	System.Boolean		129
+UnityEngine.Mesh	get_vertexCount	System.Int32		2182
+UnityEngine.Mesh	get_subMeshCount	System.Int32		2182
+UnityEngine.Mesh	set_subMeshCount	System.Void	System.Int32	2182
+UnityEngine.Mesh	SetSizedNativeArrayForChannel	System.Void	UnityEngine.Rendering.VertexAttribute;UnityEngine.Rendering.VertexAttributeFormat;System.Int32;System.IntPtr;System.Int32;System.Int32;System.Int32	129
+UnityEngine.Mesh	RecalculateBounds	System.Void		134
+UnityEngine.Mesh	UploadMeshData	System.Void	System.Boolean	134
+UnityEngine.Material	.ctor	System.Void	UnityEngine.Shader	6278
+UnityEngine.Material	.ctor	System.Void	UnityEngine.Material	6278
+UnityEngine.Material	.ctor	System.Void	System.String	6278
+UnityEngine.Material	CreateWithMaterial	System.Void	UnityEngine.Material;UnityEngine.Material	145
+UnityEngine.Material	HasProperty	System.Boolean	System.Int32	134
+UnityEngine.Material	HasProperty	System.Boolean	System.String	134
+UnityEngine.Material	SetTexture	System.Void	System.String;UnityEngine.Texture	134
+UnityEngine.Material	SetTexture	System.Void	System.Int32;UnityEngine.Texture	134
+UnityEngine.Material	SetTexture	System.Void	System.String;UnityEngine.Texture;System.Boolean	134
+UnityEngine.Material	SetTexture	System.Void	System.Int32;UnityEngine.Texture;System.Boolean	134
+UnityEngine.Material	SetTexture	System.Void	System.String;UnityEngine.RenderTexture;UnityEngine.Rendering.RenderTextureSubElement	134
+UnityEngine.Material	SetTexture	System.Void	System.Int32;UnityEngine.RenderTexture;UnityEngine.Rendering.RenderTextureSubElement	134
+UnityEngine.Material	SetTextureOffset	System.Void	System.String;UnityEngine.Vector2	134
+UnityEngine.Material	SetTextureOffset	System.Void	System.Int32;UnityEngine.Vector2	134
+UnityEngine.Material	SetTextureScale	System.Void	System.String;UnityEngine.Vector2	134
+UnityEngine.Material	SetTextureScale	System.Void	System.Int32;UnityEngine.Vector2	134
+UnityEngine.Texture2D	.ctor	System.Void	System.Int32;System.Int32;UnityEngine.Experimental.Rendering.GraphicsFormat;UnityEngine.Experimental.Rendering.TextureCreationFlags;System.Int32;System.IntPtr	6275
+UnityEngine.Texture2D	.ctor	System.Void	System.Int32;System.Int32;UnityEngine.Experimental.Rendering.DefaultFormat;UnityEngine.Experimental.Rendering.TextureCreationFlags	6278
+UnityEngine.Texture2D	.ctor	System.Void	System.Int32;System.Int32;UnityEngine.Experimental.Rendering.GraphicsFormat;UnityEngine.Experimental.Rendering.TextureCreationFlags	6278
+UnityEngine.Texture2D	.ctor	System.Void	System.Int32;System.Int32;UnityEngine.Experimental.Rendering.GraphicsFormat;System.Int32;UnityEngine.Experimental.Rendering.TextureCreationFlags	6278
+UnityEngine.Texture2D	.ctor	System.Void	System.Int32;System.Int32;UnityEngine.TextureFormat;System.Int32;System.Boolean;System.IntPtr	6275
+UnityEngine.Texture2D	.ctor	System.Void	System.Int32;System.Int32;UnityEngine.TextureFormat;System.Int32;System.Boolean	6278
+UnityEngine.Texture2D	.ctor	System.Void	System.Int32;System.Int32;UnityEngine.TextureFormat;System.Boolean;System.Boolean	6278
+UnityEngine.Texture2D	.ctor	System.Void	System.Int32;System.Int32;UnityEngine.TextureFormat;System.Boolean	6278
+UnityEngine.Texture2D	.ctor	System.Void	System.Int32;System.Int32	6278
+UnityEngine.Texture2D	Internal_Create	System.Void	UnityEngine.Texture2D;System.Int32;System.Int32;System.Int32;UnityEngine.Experimental.Rendering.GraphicsFormat;UnityEngine.Experimental.Rendering.TextureCreationFlags;System.IntPtr	145
+UnityEngine.Texture2D	ApplyImpl	System.Void	System.Boolean;System.Boolean	129
+UnityEngine.Texture2D	LoadRawTextureDataImpl	System.Boolean	System.IntPtr;System.Int32	129
+UnityEngine.Shader	.ctor	System.Void		6273
+UnityEngine.Shader	PropertyToID	System.Int32	System.String	150
+UnityEngine.Texture	.ctor	System.Void		6276
+UnityEngine.Texture	set_wrapModeU	System.Void	UnityEngine.TextureWrapMode	2182
+UnityEngine.Texture	set_wrapModeV	System.Void	UnityEngine.TextureWrapMode	2182
+UnityEngine.Texture	set_wrapModeW	System.Void	UnityEngine.TextureWrapMode	2182
+UnityEngine.Texture	set_filterMode	System.Void	UnityEngine.FilterMode	2182
+UnityEngine.Texture	set_anisoLevel	System.Void	System.Int32	2182
+UnityEngine.Texture	set_mipMapBias	System.Void	System.Single	2182
+UnityEngine.Texture	get_dimension	UnityEngine.Rendering.TextureDimension		2502
+UnityEngine.Material	get_shader	UnityEngine.Shader		2182
+UnityEngine.Shader	GetPropertyNameId	System.Int32	UnityEngine.Shader;System.Int32	145
+UnityEngine.Shader	GetPropertyType	UnityEngine.Rendering.ShaderPropertyType	UnityEngine.Shader;System.Int32	145
+UnityEngine.Shader	GetPropertyTextureDimension	UnityEngine.Rendering.TextureDimension	UnityEngine.Shader;System.Int32	145
+UnityEngine.Shader	GetPropertyCount	System.Int32		134
+UnityEngine.Shader	GetPropertyNameId	System.Int32	System.Int32	134
+UnityEngine.Shader	GetPropertyType	UnityEngine.Rendering.ShaderPropertyType	System.Int32	134
+UnityEngine.Shader	GetPropertyTextureDimension	UnityEngine.Rendering.TextureDimension	System.Int32	134
+UnityEngine.Object	Instantiate	UnityEngine.Object	UnityEngine.Object	150
+UnityEngine.Object	Instantiate	T	T	150
+UnityEngine.Object	Instantiate	UnityEngine.Object	UnityEngine.Object;UnityEngine.Transform	150
+UnityEngine.Mesh	get_blendShapeCount	System.Int32		2182
+System.Array	CreateInstance	System.Array	System.Type;System.Int32	150
+System.Array	CreateInstance	System.Array	System.Type;System.Int64[]	150
+System.Array	SetValue	System.Void	System.Object;System.Int32	134
+System.Array	SetValue	System.Void	System.Object;System.Int64	134
+System.Array	GetValue	System.Object	System.Int32	134
+System.Array	GetValue	System.Object	System.Int64	134
+System.Array	get_Length	System.Int32		2182
+UnityEngine.Transform	Find	UnityEngine.Transform	System.String	134

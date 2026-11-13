@@ -1,0 +1,35 @@
+# Source-level dependency regression, not a runtime eligibility check.
+get_filename_component(ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+file(GLOB_RECURSE HEADERS "${ROOT}/include/*.hpp")
+file(GLOB_RECURSE SOURCES "${ROOT}/src/*.hpp" "${ROOT}/src/*.cpp"
+    "${ROOT}/adapters/*.hpp" "${ROOT}/adapters/*.cpp")
+foreach(FILE IN LISTS HEADERS SOURCES)
+    file(READ "${FILE}" TEXT)
+    if(TEXT MATCHES "#include[ \t]*[<\"]hksr/framework/")
+        message(FATAL_ERROR "SDK must not depend on Framework: ${FILE}")
+    endif()
+    if(NOT FILE MATCHES "/src/serialization/" AND TEXT MATCHES "#include[ \t]*[<\"]nlohmann/|nlohmann::")
+        message(FATAL_ERROR "JSON escaped the serialization boundary: ${FILE}")
+    endif()
+endforeach()
+
+# Game declarations belong to the single adapter, not request/owner code.
+# This is a source dependency check; it never decides runtime availability.
+file(GLOB_RECURSE CORE "${ROOT}/src/*.hpp" "${ROOT}/src/*.cpp")
+foreach(FILE IN LISTS CORE)
+    file(READ "${FILE}" TEXT)
+    if(TEXT MATCHES "\"(RPG[.]|RPGTools[.]|UnityEngine|[A-Z][A-Z][A-Z][A-Z][A-Z][A-Z][A-Z][A-Z][A-Z][A-Z][A-Z]\")")
+        message(FATAL_ERROR "Game declaration escaped the adapter: ${FILE}")
+    endif()
+endforeach()
+foreach(FILE IN LISTS HEADERS SOURCES)
+    file(READ "${FILE}" TEXT)
+    if(TEXT MATCHES "RuntimeVersion|RuntimeProfile|Hsr450|Hsr460|Resolve[A-Za-z_]+460")
+        message(FATAL_ERROR "Historical game-version selection escaped into production: ${FILE}")
+    endif()
+endforeach()
+
+file(READ "${ROOT}/src/model/ActorVisualConfiguration.cpp" REQUEST)
+if(REQUEST MATCHES "#include[^\n]*(native/|managed/|adapters/)|[.]Resolve[(]|CopyMemoryChecked")
+    message(FATAL_ERROR "Visual configuration request must not resolve or access native bindings")
+endif()

@@ -1,0 +1,9 @@
+{
+  "package": "HksrApi",
+  "version": "@PROJECT_VERSION@",
+  "interface_generation": @HKSR_API_INTERFACE_GENERATION@,
+  "platform": "win64",
+  "toolset": "msvc@MSVC_TOOLSET_VERSION@",
+  "configuration": "Release",
+  "license": "WTFPL"
+}
